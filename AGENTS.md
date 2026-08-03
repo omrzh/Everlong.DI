@@ -13,14 +13,13 @@ Solo-maintained repo (`github.com/omrzh/Everlong.DI`). Keep processes light.
 
 - `.github/workflows/ci.yml` — build + `dotnet test` on every push/PR (ubuntu, .NET 8 + 10 SDKs).
 - `.github/workflows/release.yml` — on `v*` tag: Release build → test → `dotnet pack src/Everlong.DI` → `NuGet/login@v1` → push with `--skip-duplicate`.
-- `publish.ps1` is the local alternative: builds + packs into `./publish/` only (no push).
 
 ## Testing & verification
 
 - `dotnet test tests/Everlong.DI.Tests` — unit + generator + snapshot (Verify) tests. Keep them green; they are the release gate.
 - Changing generated output means updating `tests/.../Snapshots/*.verified.txt` (promote `.received.txt` after reviewing the diff).
 - `tests/AssemblyA` (not in the solution): manual end-to-end project with `EmitCompilerGeneratedFiles` — inspect `obj/Debug/net8.0/generated/` to eyeball real generated code. It exercises generic `[Injectable]` partial classes with constraints.
-- `tests/Everlong.DI.SmokeTest`: consumes the *packed* package from `./publish` (see its `NuGet.Config`); must print `All OK!`. After repacking, clear the package cache or restore picks up a stale copy.
+- `tests/Everlong.DI.SmokeTest`: consumes the published package from nuget.org (see its `NuGet.Config`); must print `All OK!`.
 
 ## Environment quirks
 

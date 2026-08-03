@@ -246,9 +246,8 @@ Every injected member is resolved via a direct generic call emitted as source co
 
 ```bash
 dotnet build              # Generates code + compiles
-dotnet pack src/Everlong.DI -c Release   # Produce the NuGet package
-./publish.ps1             # Full build + pack (Release), outputs to ./publish/
-dotnet test               # Run unit tests (38 tests covering generators, analyzers, code fixers)
+dotnet test               # Run unit tests (52 tests covering generators, analyzers, code fixers)
+git tag vX.Y.Z && git push origin vX.Y.Z   # CI builds, packs and publishes to nuget.org (trusted publishing)
 ```
 
 No design-time tooling is required — the source generator runs automatically during `dotnet build`. No `dotnet ef` equivalent here.
