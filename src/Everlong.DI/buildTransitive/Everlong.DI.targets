@@ -1,0 +1,8 @@
+<Project>
+  <ItemGroup>
+    <Analyzer Include="$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\Everlong.DI.Generators.dll"
+             Condition="'$(Language)' == 'C#' and Exists('$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\Everlong.DI.Generators.dll')" />
+    <Analyzer Include="$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\Everlong.DI.CodeFixers.dll"
+             Condition="'$(Language)' == 'C#' and Exists('$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\Everlong.DI.CodeFixers.dll')" />
+  </ItemGroup>
+</Project>

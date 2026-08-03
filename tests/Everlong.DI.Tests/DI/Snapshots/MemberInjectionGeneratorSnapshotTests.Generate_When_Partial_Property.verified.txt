@@ -1,0 +1,24 @@
+#nullable enable
+using System;
+using Microsoft.Extensions.DependencyInjection;
+using Everlong.DI;
+
+namespace TestApp;
+partial class TestClass : IInjectable
+{
+  private bool __injected;
+  [global::System.ComponentModel.EditorBrowsable(global::System.ComponentModel.EditorBrowsableState.Never)]
+  private global::TestApp.IMyService __injected_Service = default !;
+  public partial global::TestApp.IMyService Service => __injected_Service;
+
+  public virtual void Inject(IServiceProvider services)
+  {
+    if (__injected)
+      return;
+    __injected = true;
+    __injected_Service = services.GetRequiredService<global::TestApp.IMyService>();
+    OnInjected();
+  }
+
+  partial void OnInjected();
+}

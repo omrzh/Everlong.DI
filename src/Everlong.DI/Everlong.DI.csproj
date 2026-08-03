@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\EverlongDI.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Everlong.DI</RootNamespace>
+    <PackageId>Everlong.DI</PackageId>
+    <Authors>Richard Zheng</Authors>
+    <Copyright>Copyright © 2026 Everlong Technology</Copyright>
+    <Company>Everlong Technology</Company>
+    <Description>Everlong.DI — attribute-based member-injection &amp; service-registration with source generators.</Description>
+    <PackageTags>DI;DependencyInjection;MemberInjection;SourceGenerator;AOT;CodeFix</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>CS1591;$(NoWarn)</NoWarn>
+    <GeneratePackageOnBuild Condition="'$(Configuration)' != 'Debug'">true</GeneratePackageOnBuild>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/omrzh/Everlong.DI</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/omrzh/Everlong.DI.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes>0.1.0: Fix source generator for generic [Injectable] partial classes — valid hint names and type-parameter constraint clauses; generated files declare an explicit nullable context. Fix [ServiceRegistrar] generation for classes in the global namespace.</PackageReleaseNotes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\Everlong.DI.Generators\bin\$(Configuration)\netstandard2.0\Everlong.DI.Generators.dll" PackagePath="analyzers/dotnet/cs" Pack="true" Visible="false" />
+    <None Include="..\Everlong.DI.CodeFixers\bin\$(Configuration)\netstandard2.0\Everlong.DI.CodeFixers.dll" PackagePath="analyzers/dotnet/cs" Pack="true" Visible="false" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="icon.png" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="buildTransitive\Everlong.DI.targets" Pack="true" PackagePath="buildTransitive\" Visible="false" />
+  </ItemGroup>
+
+</Project>
