@@ -29,6 +29,7 @@ Solo-maintained repo (`github.com/omrzh/Everlong.DI`). Keep processes light.
 
 ## Design red lines (from docs/skills/everlong-di-workflow)
 
-- `[Injectable]` + `partial` + `IInjectable` are all required; generated `Inject()` is never called automatically — someone must call it (manual, `AddInjector()`, or a framework interceptor).
-- Never `[Inject]` a `readonly` field (generator skips the class silently).
+- `[Injectable]` + `partial` are required; `IInjectable` is recommended (the generator appends it to the partial itself). Generated `Inject()` is never called automatically — someone must call it (manual, `AddInjector()`, or a framework interceptor).
+- Never `[Inject]` a `readonly` field (compile-time error DIG0008; the generator also skips the class).
 - Default `Inject()` is idempotent (`Reinjectable = false`); transient re-injection needs `Reinjectable = true`.
+- Exactly one `[ServiceRegistrar]` per assembly (DIG0003); the registrar class must be `partial`.

@@ -19,7 +19,7 @@ Everlong.DI generates an `Inject(IServiceProvider)` method at compile time — i
 
 ## 1. Core Rules
 
-### 1.1 `[Injectable]` + `partial` + `IInjectable` — all three required.
+### 1.1 `[Injectable]` + `partial` required; `IInjectable` recommended.
 
 ```csharp
 [Injectable]                              // triggers the source generator
@@ -34,9 +34,9 @@ Missing any one of the three:
 | Missing | Result |
 |---------|--------|
 | `[Injectable]` | Generator skips the class. `IInjectable.Inject()` is not implemented → CS0535 |
-| `partial` | Generator can't emit the `Inject()` method into a separate file → CS0260 |
-| `IInjectable` | No contract — the generated `Inject()` method is just a public method nobody is forced to call |
-| All present | Generator produces `public virtual void Inject(IServiceProvider services) { … }` with an idempotency guard and an `OnInjected()` partial hook |
+| `partial` | Generator skips the class — non-partial classes are filtered out before generation. If you declared `IInjectable`, its `Inject()` stays unimplemented → CS0535; with `[Inject]` properties the analyzer additionally flags DIG0007 |
+| `IInjectable` | Nothing breaks — the generator appends `: IInjectable` to the generated partial itself. Declaring it explicitly is still recommended: it documents the contract and keeps the class usable even without generated code |
+| All present | Generator produces an `Inject(IServiceProvider)` implementation with an idempotency guard and an `OnInjected()` partial hook. The exact modifier depends on the class shape — see §1.8 |
 
 ### 1.2 `LangVersion` must be `preview` for partial properties.
 
@@ -59,10 +59,12 @@ svc.Inject(sp);
 svc.Run();
 
 // ✅ Or: use the built-in auto-inject wrapper
-services.AddInjector();  // registers IInjectorServiceProvider
+services.AddInjector();  // registers IInjectorServiceProvider + IInjector (scoped by default)
 var injector = services.BuildServiceProvider().GetRequiredService<IInjectorServiceProvider>();
 var svc = injector.GetRequiredService<MyService>();  // Inject() called automatically
 ```
+
+`AddInjector()` registers two services: `IInjectorServiceProvider` (a composite of `IKeyedServiceProvider` + `IInjector`, scoped by default — pass `ServiceLifetime.Singleton` to change) and `IInjector`. The wrapper requires the underlying provider to implement `IKeyedServiceProvider` (the standard MS container does since .NET 8) and throws `ArgumentException` otherwise. Every `IInjectable` resolved through the wrapper — keyed or not — gets `Inject()` called automatically.
 
 ### 1.4 `[Inject]` on a field generates direct assignment; on a partial property generates a backing field.
 
@@ -131,7 +133,34 @@ public partial class MyService : IInjectable
 }
 ```
 
-`OnInjected()` is called whether or not the idempotency guard short-circuits. For `Reinjectable = false` classes, implement `OnInjected()` to run once; for reinjectable classes, it runs on every call.
+`OnInjected()` is only called when injection actually runs — the idempotency guard short-circuits before it. For `Reinjectable = false` classes it therefore runs exactly once, on the first `Inject()` call; for reinjectable classes it runs on every call.
+
+### 1.8 Inheritance — `Inject()` chains through base classes.
+
+If the immediate base class is injectable (implements `IInjectable` or declares its own `[Inject]` members), the generated method is emitted as `public override` and calls `base.Inject(services)` first:
+
+```csharp
+[Injectable]
+public partial class BaseService : IInjectable
+{
+    [Inject] private ILogger _logger;
+}
+
+[Injectable]
+public partial class DerivedService : BaseService
+{
+    [Inject] private IHttpClientFactory _http;
+}
+// Generated DerivedService.Inject():
+// public override void Inject(IServiceProvider services)
+// {
+//     base.Inject(services);
+//     this._http = services.GetRequiredService<IHttpClientFactory>();
+//     OnInjected();
+// }
+```
+
+Each class in the hierarchy gets its own idempotency guard and its own `OnInjected()` call; `Reinjectable` is read from the class's own `[Injectable]` attribute. On a `sealed` class the generated method is a plain `public void Inject(...)` — neither `virtual` nor `override`.
 
 ---
 
@@ -139,7 +168,7 @@ public partial class MyService : IInjectable
 
 ### 2.1 `[Singleton]`, `[Transient]`, `[Scoped]` — meta-data only without `[ServiceRegistrar]`.
 
-These attributes alone do nothing at runtime. They only become meaningful when accompanied by a `[ServiceRegistrar]` partial class that the `ServiceRegistrationGenerator` fills in:
+These attributes alone do nothing at runtime. They only become meaningful when accompanied by a `[ServiceRegistrar]` partial class that the `ServiceRegistrationGenerator` fills in. They work on classes and records alike:
 
 ```csharp
 [Singleton<IMyService>]
@@ -220,15 +249,30 @@ Every injected member is resolved via a direct generic call emitted as source co
 
 | Forbidden | Why |
 |-----------|-----|
-| `[Inject]` on a `readonly` field | The generator skips the entire class silently. Field won't be assigned, interface contract remains unimplemented (CS0535). Use partial property injection instead.
+| `[Inject]` on a `readonly` field | Compile-time error DIG0008 (the generator also skips the class, leaving the interface contract unimplemented → CS0535). Use partial property injection instead.
 | Using `Reinjectable = false` (default) for a transient that gets re-injected into different scopes | The idempotency guard means members from the first injection are never updated. Either set `Reinjectable = true` or re-create the instance. |
 | `[Injectable]` on a non-partial class | Generator cannot inject code → compilation error. The analyzer catches this at IDE time (DIG0007 / DIG0009). |
-| Forgetting `IInjectable` on the class | The generated `Inject()` method exists but is not part of any interface — nothing enforces it gets called. The analyzer flags missing `[Injectable]` (DIG0009). |
+| `[Inject]` members on a class without `[Injectable]` | Compile-time error DIG0009. The analyzer requires `[Injectable]` on any type that declares `[Inject]` members. |
 | Calling `Inject()` before the service provider is ready | If the injected members depend on services that haven't been registered yet, `GetRequiredService<T>()` throws at injection time, not at usage time. That is correct behavior — fail fast. |
 | Holding a scoped service in a field injected once into a singleton | The `[Inject]` is called once. If the target is a singleton, its injected scoped services are captured for the entire application lifetime. This is a DI anti-pattern — same as constructor-injecting a scoped service into a singleton.
 | Forgetting to register `IInjectorServiceProvider` when auto-inject is expected | `services.AddInjector()` must be called; otherwise `IInjectorServiceProvider` is not in the container and no auto-injection happens. |
 | Registering the same service with both non-generic and generic `[Singleton]` / `[Transient]` / `[Scoped]` on the same class | `TryAdd` ensures only the first wins, but the generator emits both registration calls, leading to confusion. Pick one style per class. |
+| More than one `[ServiceRegistrar]` class per assembly | Generator error DIG0003 — exactly one registrar is allowed per assembly. |
+| `[ServiceRegistrar]` on a non-partial class | The generator skips it silently; `RegisterServices()` is never implemented (CS0535 if you declared `IServiceRegistrar`). Keep the registrar class partial. |
 | Editing generated `*.Inject.g.cs` files | They're overwritten on every build. Change the source attributes instead. |
+
+### 5.1 Diagnostic quick reference
+
+| ID | Severity | Meaning |
+|----|----------|---------|
+| DIG0003 | Error | More than one `[ServiceRegistrar]` per assembly |
+| DIG0004 | Error | Non-partial `[Inject]` property has no setter |
+| DIG0005 | Error | `[Inject]` member is `static` |
+| DIG0006 | Error | `init`-only `[Inject]` property is not `partial` |
+| DIG0007 | Error | Class with `[Inject]` members is not `partial` |
+| DIG0008 | Error | `[Inject]` on a `readonly` field |
+| DIG0009 | Error | `[Inject]` members without `[Injectable]` |
+| DIG0010 | Info | Prefer partial property over field injection |
 
 ---
 
@@ -238,16 +282,4 @@ Every injected member is resolved via a direct generic call emitted as source co
 - Test nullable injection: register a service as optional, inject with nullable type, verify `null` is handled gracefully.
 - Test the `ServiceRegistrationGenerator` by creating the `[ServiceRegistrar]` partial class, calling `RegisterServices()` on it, building the `ServiceCollection`, and resolving the expected services.
 - Use the real DI container (`ServiceCollection` + `BuildServiceProvider`) in tests — don't mock `IServiceProvider` unless you're testing the generator output in isolation.
-- Snapshot tests (via Verify) are the standard way to validate generated source code — see `tests/Everlong.DI.Tests/` for examples.
-
----
-
-## 7. CLI / Tooling
-
-```bash
-dotnet build              # Generates code + compiles
-dotnet test               # Run unit tests (52 tests covering generators, analyzers, code fixers)
-git tag vX.Y.Z && git push origin vX.Y.Z   # CI builds, packs and publishes to nuget.org (trusted publishing)
-```
-
-No design-time tooling is required — the source generator runs automatically during `dotnet build`. No `dotnet ef` equivalent here.
+- Snapshot tests (via Verify) are the standard way to validate generated source code — see `tests/Everlong.DI.Tests/DI/Snapshots/` for examples.
