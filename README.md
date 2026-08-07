@@ -1,7 +1,11 @@
 # Everlong.DI
 
-**Everlong.DI** is a lightweight member-injection & service-registration library for .NET.  
-It provides a clean attribute-based DI experience with source generators — no reflection overhead at runtime.
+**Everlong.DI** is a lightweight attribute-based DI library for .NET, built on source generators — no reflection overhead at runtime. It covers **two independent mechanisms**:
+
+- **Member Injection** (`[Injectable]` / `[Inject]`) — push services *into* an object after it exists.
+- **Service Registration** (`[Singleton]` / `[Scoped]` / `[Transient]` / `[AlsoAs]` / `[ServiceRegistrar]`) — declare which types go *into* the container.
+
+They solve different problems and never interact: registering a class does not inject its members, and injecting members does not register anything. Pick the parts you need.
 
 ```
 dotnet add package Everlong.DI
@@ -9,26 +13,145 @@ dotnet add package Everlong.DI
 
 ---
 
-## What's included
+## Two mechanisms, two scenarios
 
-One NuGet package, everything inside:
+| | **Member Injection** | **Service Registration** |
+|---|---|---|
+| Problem | An object already exists and its dependencies are `null` | Types must be declared to the container at startup |
+| Typical scene | Manually created objects, framework-hosted objects, lazy/optional wiring | Application composition root, plugin/batch registration |
+| Core types | `[Injectable]`, `[Inject]`, `IInjectable`, `IInjectorServiceProvider` | `[Singleton<T>]`, `[Scoped<T>]`, `[Transient<T>]`, `[AlsoAs<T>]`, `[ServiceRegistrar]` |
+| What the generator produces | `Inject(IServiceProvider)` bodies | `RegisterServices(IServiceCollection)` bodies |
+| Runtime hook | Someone must call `Inject()` (manual, wrapper SP, or framework interceptor) | `services.AddServices(new MyRegistrar())` |
 
-| Layer | Contents |
+---
+
+# Part A — Member Injection
+
+## Quick start
+
+```csharp
+using Everlong.DI;
+
+[Injectable]                                   // triggers the source generator
+public partial class MyService : IInjectable   // IInjectable = the Inject() contract
+{
+    [Inject] private ILogger _logger;                       // field injection
+    [Inject] public ISomeService Service { get; set; }      // property injection
+}
+```
+
+The generator produces:
+
+```csharp
+public virtual void Inject(IServiceProvider services)
+{
+    _logger = services.GetRequiredService<ILogger>();
+    Service = services.GetRequiredService<ISomeService>();
+}
+```
+
+## Who calls `Inject()`?
+
+| Pattern | Usage |
 |---|---|
-| **Contracts** | `IInjectable`, `IInjector`, `IInjectorServiceProvider`, `IServiceRegistrar` |
-| **Attributes** | `[Injectable]`, `[Inject]`, `[Singleton]`, `[Transient]`, `[Scoped]`, `[ServiceRegistrar]` |
-| **Helpers** | `ServiceRegistrarHelper` (AOT-safe registration validation), `ServiceCollectionExtensions.AddInjector()` |
-| **Service Provider** | `InjectorServiceProvider` — built-in wrapper that auto-injects `IInjectable` instances on every resolve |
-| **Source Generator** | `MemberInjectionGenerator` (generates `Inject()` bodies), `ServiceRegistrationGenerator` (generates `RegisterServices()`) |
-| **Analyzers** | `PropertyInjectionAnalyzer`, `ReadonlyInjectionAnalyzer`, `ReadonlyInjectionSuppressor` |
-| **Code Fixers** | `PropertyInjectionCodeFixProvider`, `InjectableCodeFixProvider`, `PartialKeywordCodeFixProvider` |
+| **Manual** | `var svc = sp.GetRequiredService<MyService>(); svc.Inject(sp);` — console apps, workers, tests |
+| **Auto-inject wrapper** | `services.AddInjector();` then resolve through `IInjectorServiceProvider` — every resolved `IInjectable` is injected automatically |
+| **Framework interceptor** | Your own IoC integration calls `Inject()` during activation |
+
+`AddInjector()` registers `IInjectorServiceProvider` (scoped by default; pass `ServiceLifetime.Singleton` to change). The wrapper implements `IKeyedServiceProvider`, so keyed resolves get injected too.
+
+## Details worth knowing
+
+- **Nullable members are optional**: `[Inject] ILogger? _logger` → `GetService<T>()` (returns `null`); non-nullable → `GetRequiredService<T>()` (throws). Fail fast by default.
+- **Keyed injection**: `[Inject("cache")]`, `[Inject(42)]`, `[Inject(typeof(TKey))]`, `[Inject(SomeEnum.X)]` → `GetRequiredKeyedService<T>(key)` (requires .NET 8+ container).
+- **`Reinjectable`**: default `false` makes `Inject()` idempotent (safe for singletons); `true` re-assigns on every call (for transients re-injected across scopes).
+- **`partial void OnInjected()`**: runs after every successful injection.
+- **Inheritance**: `Inject()` chains through base classes (`override` + `base.Inject(services)`).
+- **Partial properties**: `[Inject] public partial ILogger Logger { get; }` generates a backing field — requires `<LangVersion>preview</LangVersion>`.
+
+---
+
+# Part B — Service Registration
+
+## Quick start
+
+```csharp
+using Everlong.DI;
+
+[Singleton]                        // register the class itself
+public partial class CacheService;
+
+[Singleton<IOrderService>]         // register as a service type
+public partial class OrderService : IOrderService;
+
+[Scoped<IRepository>("tenant:eu")] // keyed registration
+public partial class Repository : IRepository;
+
+[ServiceRegistrar]                 // one per assembly — generator fills RegisterServices()
+public partial class MyRegistrar : IServiceRegistrar;
+```
+
+Wire it up:
+
+```csharp
+var services = new ServiceCollection();
+services.AddServices(new MyRegistrar());
+```
+
+The generator emits for each annotated type a `TryAdd`/`Add` + `ServiceDescriptor` call, guarded by `ServiceRegistrarHelper` validation (AOT-safe, see below).
+
+## Registration attributes
+
+| Attribute | Meaning |
+|---|---|
+| `[Singleton]` / `[Scoped]` / `[Transient]` | Register the class itself (self) |
+| `[Singleton<T>]` / `[Scoped<T>]` / `[Transient<T>]` | Register as service type `T` — repeatable, each registration gets its own instance |
+| `[AlsoAs<T>]` | Add a **shared view** of the single instance registered by the main `[Singleton]`/`[Scoped]` registration |
+| `[ServiceRegistrar]` | Marks the partial class that hosts the generated `RegisterServices()` |
+
+Constructor arguments, on every attribute: `(key?, enumerable?)`.
+
+```csharp
+[Singleton<IFoo>(isEnumerable: true)]        // multiple implementations, resolved as IEnumerable<IFoo>
+[Singleton<IFoo>("tenant:eu")]               // keyed — resolve with GetRequiredKeyedService<IFoo>("tenant:eu")
+[Singleton<IFoo>("tenant:eu", isEnumerable: true)]
+```
+
+Keyed and unkeyed registrations are independent spaces — `[Singleton<IFoo>]` + `[Singleton<IFoo>("k")]` on one class is legal.
+
+## `[AlsoAs<T>]` — one instance, several faces
+
+```csharp
+[Singleton]                    // main registration — the single instance
+[AlsoAs<ICache>]               // ICache resolves to the same instance
+[AlsoAs<IMetric>("metrics")]   // keyed view of the same instance
+public partial class Cache : ICache, IMetric;
+
+var cache = sp.GetRequiredService<ICache>();
+var metric = sp.GetRequiredKeyedService<IMetric>("metrics");
+ReferenceEquals(cache, metric);  // true
+```
+
+The main registration can be `[Singleton]`, `[Scoped]`, or a single generic variant (`[Singleton<T>]`, `[Scoped<T>]`). Lifetime follows the main.
+
+## Composition rules (enforced by the generator)
+
+| Rule | Error |
+|---|---|
+| One lifetime per type — no cross-lifetime mixes | DIG0016 |
+| Self and generic registrations are mutually exclusive within a lifetime — share via `[AlsoAs]`, get independence via multiple `[Singleton<T>]` | DIG0015 |
+| `[AlsoAs]` needs exactly one non-transient, non-enumerable main registration | DIG0011–0014 |
+| `[AlsoAs]` type must be an interface the class implements | DIG0017 |
+| Duplicate registrations are allowed (`TryAdd` first-wins, `Add` accumulates) | — |
+
+See `docs/skills/everlong-di-workflow/SKILL.md` for the full workflow, diagnostics reference, and red lines.
 
 ---
 
 ## Requirements
 
 - .NET 8+
-- Your project **must** set `<LangVersion>preview</LangVersion>` in `.csproj` to use partial properties:
+- `<LangVersion>preview</LangVersion>` in the consuming project (partial-property injection only; field injection works on any modern LangVersion):
 
   ```xml
   <PropertyGroup>
@@ -36,185 +159,13 @@ One NuGet package, everything inside:
   </PropertyGroup>
   ```
 
-  This is required by the C# compiler for the partial property syntax (`[Inject] public partial ILogger Logger { get; }`).
-  The source generator itself targets `netstandard2.0` and works with any modern Roslyn version.
-
----
-
-## Quick Start
-
-### 1. Mark a class for member injection
-
-```csharp
-using Everlong.DI;
-
-[Injectable]                                // ← triggers source generator
-public partial class MyService : IInjectable  // ← IInjectable gives you the Inject() contract
-{
-    [Inject] private ILogger _logger;        // ← field injection
-    [Inject] public ISomeService Service { get; set; }  // ← property injection
-
-    // The generator produces:
-    // public virtual void Inject(IServiceProvider services)
-    // {
-    //     _logger = services.GetRequiredService<ILogger>();
-    //     Service = services.GetRequiredService<ISomeService>();
-    // }
-}
-```
-
-### 2. Call `Inject()` after resolution — or auto-inject
-
-**Manual injection:**
-
-```csharp
-using Microsoft.Extensions.DependencyInjection;
-
-var services = new ServiceCollection();
-services.AddSingleton<MyService>();
-// ... register other services ...
-
-var sp = services.BuildServiceProvider();
-var instance = sp.GetRequiredService<MyService>();
-
-// Trigger member injection:
-instance.Inject(sp);
-```
-
-**Automatic injection** — register the built-in `IInjectorServiceProvider` wrapper and every resolved `IInjectable` gets its members injected automatically:
-
-```csharp
-var services = new ServiceCollection();
-services.AddInjector();                          // registers IInjectorServiceProvider as scoped
-services.AddSingleton<MyService>();
-
-var injector = services.BuildServiceProvider().GetRequiredService<IInjectorServiceProvider>();
-var instance = injector.GetRequiredService<MyService>();  // Inject() called automatically
-```
-
-You can also change the lifetime: `services.AddInjector(ServiceLifetime.Singleton)`.
-
-### 3. Service registration via attributes
-
-```csharp
-[Singleton]                           // register as self
-public partial class CacheService : IInjectable { … }
-
-[Singleton<IService>(IsEnumerable = true)]   // register as IService + enumerable
-public partial class MyService : IService, IInjectable { … }
-
-[Transient]
-public partial class Handler : IInjectable { … }
-
-[Scoped]
-public partial class ScopedService : IInjectable { … }
-```
-
-Then add a `[ServiceRegistrar]` class — the generator auto-implements `RegisterServices`:
-
-```csharp
-using Everlong.DI;
-
-[ServiceRegistrar]
-public partial class MyRegistrar : IServiceRegistrar;
-
-// Generated:
-// public partial class MyRegistrar : IServiceRegistrar
-// {
-//     public void RegisterServices(IServiceCollection services)
-//     {
-//         ServiceRegistrarHelper.EnsureConcreteType<CacheService>();
-//         services.TryAdd(new ServiceDescriptor(typeof(CacheService), typeof(CacheService), ServiceLifetime.Singleton));
-//         ServiceRegistrarHelper.VerifyImplementation<IService, MyService>();
-//         services.TryAdd(new ServiceDescriptor(typeof(IService), typeof(MyService), ServiceLifetime.Singleton));
-//         …
-//     }
-// }
-
-// Registration:
-services.AddServices(new MyRegistrar());
-```
-
----
-
-## Attributes Reference
-
-| Attribute | Target | Description |
-|---|---|---|
-| `[Injectable]` | class | Marks a partial class for generated `Inject()` method. Supports `Reinjectable = true` to allow repeated injection |
-| `[Inject]` | property / field | Marks a member to be injected |
-| `[Singleton]` | class | Registers the class as singleton (self) |
-| `[Singleton<T>]` | class | Registers the class as singleton for service type `T` |
-| `[Transient]` | class | Registers the class as transient (self) |
-| `[Transient<T>]` | class | Registers the class as transient for service type `T` |
-| `[Scoped]` | class | Registers the class as scoped (self) |
-| `[Scoped<T>]` | class | Registers the class as scoped for service type `T` |
-| `[ServiceRegistrar]` | class | Marks a partial class to host the generated `RegisterServices` |
-
-### `[Injectable]` options
-
-| Option | Default | Description |
-|---|---|---|
-| `Reinjectable` | `false` | When `false`, the generated `Inject()` method is idempotent — subsequent calls do nothing. Set to `true` to allow re-assignment on every call (e.g. for transient instances that may be injected multiple times). |
-
-### `[Inject]` overloads
-
-```csharp
-[Inject]                 // unkeyed — resolved via GetRequiredService<T>()
-[Inject("key")]          // string key
-[Inject(42)]             // int key
-[Inject(typeof(TKey))]   // Type key
-[Inject(SomeEnum.X)]     // Enum key
-```
-
-Nullable members automatically use `GetService<T>()` / `GetKeyedService<T>()` (safe, returns null if not registered).
-
-### Generated `Inject()` method
-
-Partial properties generate a backing field + expression-bodied property:
-
-```csharp
-[Inject] public partial ILogger Logger { get; }
-// Generated:
-// [EditorBrowsable(Never)]
-// private ILogger __injected_Logger = default!;
-// public partial ILogger Logger => __injected_Logger;
-```
-
-Every generated `Inject()` method includes a call to `OnInjected()` at the end. You can optionally implement this partial method to run custom logic after injection:
-
-```csharp
-[Injectable]
-public partial class MyService : IInjectable
-{
-    [Inject] private ILogger _logger;
-
-    partial void OnInjected()
-    {
-        // Called after all members are injected
-        _logger.LogInformation("Injection complete");
-    }
-}
-```
-
----
-
-## Key Interfaces
-
-| Interface | Role |
-|---|---|
-| `IInjectable` | Contract for member injection — the generated code implements `Inject(IServiceProvider)` |
-| `IInjector` | Typed entry point — `void Inject(IInjectable instance)` |
-| `IInjectorServiceProvider` | Composite of `IKeyedServiceProvider` + `IInjector` — auto-injects on resolve |
-| `IServiceRegistrar` | Push-based registration — `void RegisterServices(IServiceCollection)` |
+- The source generator itself targets `netstandard2.0` and works with any modern Roslyn version.
 
 ---
 
 ## AOT / Trimming
 
-`ServiceRegistrarHelper.EnsureConcreteType<T>()` and `VerifyImplementation<TService, TImpl>()` are annotated with `[DynamicallyAccessedMembers]` to preserve constructors during trimming.
-
-The source generator produces direct `GetRequiredService<T>()` calls, so there is no reflection in the hot path.
+`ServiceRegistrarHelper.EnsureConcreteType<T>()` / `VerifyImplementation<TService, TImpl>()` carry `[DynamicallyAccessedMembers]` so constructors survive trimming. Generated injection resolves via direct `GetRequiredService<T>()` calls — no reflection in the hot path.
 
 ---
 
@@ -243,8 +194,8 @@ Everlong.DI/
 │   └── Everlong.DI.CodeFixers/          # Roslyn code fixers (embedded)
 └── tests/
     ├── Everlong.DI.Tests/               # Unit tests + snapshot tests (Verify)
-    ├── AssemblyA/                        # Analyzer test reference assemblies
-    └── AssemblyB/
+    ├── AssemblyA/                       # Manual end-to-end verification project
+    └── Everlong.DI.SmokeTest/           # Consumes the published package from nuget.org
 ```
 
 ---

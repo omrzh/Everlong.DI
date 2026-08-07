@@ -29,7 +29,18 @@ Solo-maintained repo (`github.com/omrzh/Everlong.DI`). Keep processes light.
 
 ## Design red lines (from docs/skills/everlong-di-workflow)
 
+### Member injection
+
 - `[Injectable]` + `partial` are required; `IInjectable` is recommended (the generator appends it to the partial itself). Generated `Inject()` is never called automatically — someone must call it (manual, `AddInjector()`, or a framework interceptor).
 - Never `[Inject]` a `readonly` field (compile-time error DIG0008; the generator also skips the class).
 - Default `Inject()` is idempotent (`Reinjectable = false`); transient re-injection needs `Reinjectable = true`.
 - Exactly one `[ServiceRegistrar]` per assembly (DIG0003); the registrar class must be `partial`.
+
+### Service registration
+
+- **One lifetime per type** — cross-lifetime mixes (`[Singleton]` + `[Scoped]`, `[Singleton<IFoo>]` + `[Scoped<IBar>]`) are DIG0016.
+- **Self × generic mutually exclusive within a lifetime** — `[Singleton]` + `[Singleton<IFoo>]` is DIG0015. Shared instance → `[Singleton]` + `[AlsoAs<IFoo>]`; independent instances → multiple `[Singleton<T>]` (generic attributes are `AllowMultiple`).
+- **`[AlsoAs<T>]` needs exactly one non-transient, non-enumerable main registration** (DIG0011–0014) and `T` must be an interface the class implements (DIG0017). Transient has no shareable instance; enumerable mains have no single instance.
+- **Duplicate registrations are allowed, not errors** (`TryAdd` first-wins, `Add` accumulates) — the semantic traps are the *combinations* above, which the generator rejects.
+- **Keyed registrations** (`[Singleton<T>("key")]`, `[AlsoAs<T>("key")]`) share the key space with `[Inject("key")]`; keyed and unkeyed registrations are independent.
+- `isEnumerable` / `key` are **constructor arguments** (`(key?, enumerable?)`), never named property assignments — `IsEnumerable` is get-only.
