@@ -7,7 +7,8 @@ internal record ServiceInfo(
     string ServiceType,
     string Lifetime,
     bool IsEnumerable,
-    string AssemblyName
+    string AssemblyName,
+    string? KeyExpression = null
 );
 
 internal record ServiceRegistrarInfo(

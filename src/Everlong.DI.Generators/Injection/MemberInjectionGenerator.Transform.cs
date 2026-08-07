@@ -60,7 +60,7 @@ partial class MemberInjectionGenerator
             propertySymbol.Name,
             propertySymbol.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             isPartial, modifiers, IsField: false, isNullable,
-            KeyExpression: GetKeyExpression(injectAttribute)));
+            KeyExpression: injectAttribute.GetKeyExpression()));
         }
         else if (memberSymbol is IFieldSymbol fieldSymbol)
         {
@@ -83,7 +83,7 @@ partial class MemberInjectionGenerator
             fieldSymbol.Name,
             fieldSymbol.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             IsPartial: false, modifiers, IsField: true, isNullable,
-            KeyExpression: GetKeyExpression(injectAttribute)));
+            KeyExpression: injectAttribute.GetKeyExpression()));
         }
       }
 
@@ -130,29 +130,5 @@ partial class MemberInjectionGenerator
       }
     }
     return false;
-  }
-
-  private static string? GetKeyExpression(AttributeData attribute)
-  {
-    if (attribute.ConstructorArguments.Length == 0 || attribute.ConstructorArguments[0].IsNull)
-      return null;
-
-    TypedConstant arg = attribute.ConstructorArguments[0];
-    if (arg is { Kind: TypedConstantKind.Type, Value: ITypeSymbol typeSymbol })
-      return $"typeof({typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})";
-
-    if (arg is { Kind: TypedConstantKind.Enum, Value: not null, Type: not null })
-    {
-      string enumType = arg.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-      return $"({enumType}){arg.Value}";
-    }
-
-    if (arg is { Kind: TypedConstantKind.Primitive, Value: string s })
-      return $"\"{s}\"";
-
-    if (arg is { Kind: TypedConstantKind.Primitive, Value: not null })
-      return arg.Value.ToString();
-
-    return null;
   }
 }

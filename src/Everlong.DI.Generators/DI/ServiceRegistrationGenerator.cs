@@ -1,4 +1,5 @@
 using Everlong.DI.Generators.Constants;
+using Everlong.DI.Generators.Extensions;
 using Everlong.DI.Generators.Models;
 using System.Collections.Immutable;
 using Everlong.DI.Generators.Helpers;
@@ -68,11 +69,22 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     {
       bool isGeneric = attr.AttributeClass?.IsGenericType ?? false;
       bool isEnumerable = false;
+      string? keyExpression = null;
 
-      if (isGeneric && attr.ConstructorArguments.Length >= 1)
+      if (attr.ConstructorArguments.Length > 0)
       {
-        if (attr.ConstructorArguments[0].Value is bool val)
-          isEnumerable = val;
+        if (attr.ConstructorArguments[0].Value is bool enumerable)
+        {
+          // [Singleton<T>(isEnumerable: true)] — existing bool constructor.
+          isEnumerable = enumerable;
+        }
+        else
+        {
+          // [Singleton<T>("key")] / [Singleton<T>("key", enumerable: true)] — keyed constructor.
+          keyExpression = attr.GetKeyExpression();
+          if (attr.ConstructorArguments.Length > 1 && attr.ConstructorArguments[1].Value is bool enumerableValue)
+            isEnumerable = enumerableValue;
+        }
       }
 
       string implementationType = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -83,7 +95,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         serviceType = attr.AttributeClass.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
       }
 
-      yield return new ServiceInfo(implementationType, serviceType, lifetime, isEnumerable, classSymbol.ContainingAssembly.Name);
+      yield return new ServiceInfo(implementationType, serviceType, lifetime, isEnumerable, classSymbol.ContainingAssembly.Name, keyExpression);
     }
   }
 
@@ -125,8 +137,7 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     var statements = new List<StatementSyntax>();
     foreach (var service in services)
     {
-      var lifetimeEnum = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression,
-          IdentifierName("ServiceLifetime"), IdentifierName(service.Lifetime));
+      string lifetime = $"ServiceLifetime.{service.Lifetime}";
 
       if (service.ServiceType == service.ImplementationType)
       {
@@ -137,34 +148,11 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         statements.Add(ParseStatement($"ServiceRegistrarHelper.VerifyImplementation<{service.ServiceType}, {service.ImplementationType}>();"));
       }
 
-      if (service.IsEnumerable)
-      {
-        statements.Add(ExpressionStatement(
-            InvocationExpression(
-                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName("services"), IdentifierName("Add")))
-            .WithArgumentList(ArgumentList(SingletonSeparatedList(
-                Argument(ObjectCreationExpression(IdentifierName("ServiceDescriptor"))
-                    .WithArgumentList(ArgumentList(SeparatedList([
-                      Argument(TypeOfExpression(ParseTypeName(service.ServiceType))),
-                      Argument(TypeOfExpression(ParseTypeName(service.ImplementationType))),
-                      Argument(lifetimeEnum)
-                    ])))))))));
-      }
-      else
-      {
-        statements.Add(ExpressionStatement(
-            InvocationExpression(
-                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName("services"), IdentifierName("TryAdd")))
-            .WithArgumentList(ArgumentList(SingletonSeparatedList(
-                Argument(ObjectCreationExpression(IdentifierName("ServiceDescriptor"))
-                    .WithArgumentList(ArgumentList(SeparatedList([
-                      Argument(TypeOfExpression(ParseTypeName(service.ServiceType))),
-                      Argument(TypeOfExpression(ParseTypeName(service.ImplementationType))),
-                      Argument(lifetimeEnum)
-                    ])))))))));
-      }
+      string descriptor = service.KeyExpression is null
+          ? $"new ServiceDescriptor(typeof({service.ServiceType}), typeof({service.ImplementationType}), {lifetime})"
+          : $"ServiceDescriptor.Keyed{service.Lifetime}(typeof({service.ServiceType}), {service.KeyExpression}, typeof({service.ImplementationType}))";
+
+      statements.Add(ParseStatement($"services.{(service.IsEnumerable ? "Add" : "TryAdd")}({descriptor});"));
     }
 
     var method = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), "RegisterServices")
