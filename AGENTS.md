@@ -27,20 +27,15 @@ Solo-maintained repo (`github.com/omrzh/Everlong.DI`). Keep processes light.
 - Generator/tests target Roslyn via NuGet (`Microsoft.CodeAnalysis.CSharp`); tests intentionally use `4.12.0` (partial properties bind only on Roslyn ≥ 4.9). Keep the generator project itself on `4.8.0` for host compatibility.
 - `LangVersion preview` is required by consumers using `[Inject]` on partial properties (C# 13).
 
-## Design red lines (from docs/skills/everlong-di-workflow)
+## Behavior contract & doc sync
 
-### Member injection
+- **Authoritative behavior contract**: `docs/skills/everlong-di-workflow/SKILL.md` (workflow rules, red lines, diagnostics, generated-code shapes). It is the how-to; `README.md` is the user-facing overview; this file only records where things live and what must stay in sync. Read SKILL.md before touching generator/attribute behavior.
+- **One commit, three files**: any behavior/API change lands in the same commit as SKILL.md (rules + red lines + diagnostic table) and README.md (user-facing wording), plus tests. Docs drift is a release-blocker.
+- **Diagnostic IDs**: allocated DIG0001–DIG0017, single source in `src/Everlong.DI.Generators/Constants/Diagnostics.cs`; new IDs start at DIG0018. Every ID appears in three places: Descriptors, SKILL.md §5.1, and generator tests. Semantic traps are Errors; style nudges are Info.
+- **Attribute API shape**: registration attributes take constructor args `(key?, enumerable?)`; `IsEnumerable`/`Key` are get-only, so `IsEnumerable = true` in any doc/usage is always wrong. Keys are string/int/Type/enum — the same set as `[Inject]`, same key space at runtime.
+- **Behavior changes are allowed in exactly two directions**: tighten (turn a semantic trap into a diagnostic — call it out in the commit) or unlock (rely on the TryAdd/Add container contract — state the contract in the commit). Never silently rewrite an existing attribute's emission semantics.
 
-- `[Injectable]` + `partial` are required; `IInjectable` is recommended (the generator appends it to the partial itself). Generated `Inject()` is never called automatically — someone must call it (manual, `AddInjector()`, or a framework interceptor).
-- Never `[Inject]` a `readonly` field (compile-time error DIG0008; the generator also skips the class).
-- Default `Inject()` is idempotent (`Reinjectable = false`); transient re-injection needs `Reinjectable = true`.
-- Exactly one `[ServiceRegistrar]` per assembly (DIG0003); the registrar class must be `partial`.
+## Generator architecture notes
 
-### Service registration
-
-- **One lifetime per type** — cross-lifetime mixes (`[Singleton]` + `[Scoped]`, `[Singleton<IFoo>]` + `[Scoped<IBar>]`) are DIG0016.
-- **Self × generic mutually exclusive within a lifetime** — `[Singleton]` + `[Singleton<IFoo>]` is DIG0015. Shared instance → `[Singleton]` + `[AlsoAs<IFoo>]`; independent instances → multiple `[Singleton<T>]` (generic attributes are `AllowMultiple`).
-- **`[AlsoAs<T>]` needs exactly one non-transient, non-enumerable main registration** (DIG0011–0014) and `T` must be an interface the class implements (DIG0017). Transient has no shareable instance; enumerable mains have no single instance.
-- **Duplicate registrations are allowed, not errors** (`TryAdd` first-wins, `Add` accumulates) — the semantic traps are the *combinations* above, which the generator rejects.
-- **Keyed registrations** (`[Singleton<T>("key")]`, `[AlsoAs<T>("key")]`) share the key space with `[Inject("key")]`; keyed and unkeyed registrations are independent.
-- `isEnumerable` / `key` are **constructor arguments** (`(key?, enumerable?)`), never named property assignments — `IsEnumerable` is get-only.
+- `ServiceRegistrationGenerator`: per-attribute incremental providers → per-type aggregation in `Execute` (GroupBy ImplementationType); registration-rule diagnostics (DIG0011–0017) are reported there; AlsoAs type validation is a separate transform-time pipeline (needs symbols). `ServiceInfo` is a value record — duplicates are deduplicated with `Distinct()`.
+- `MemberInjectionGenerator`: transform returns `Result<InjectionInfo?>` with diagnostics carried out and reported at the source-output stage.

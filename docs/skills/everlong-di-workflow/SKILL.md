@@ -1,6 +1,6 @@
 ---
 name: everlong-di-workflow
-description: Use Everlong.DI member injection correctly. Avoid "it compiles but the injected member is null" surprises.
+description: Use Everlong.DI correctly — member injection ([Injectable]/[Inject], keyed members, auto-inject via AddInjector) and attribute-based service registration ([Singleton]/[Scoped]/[Transient]/[AlsoAs]/[ServiceRegistrar], keyed and enumerable variants). Avoid null-injected-member surprises, torn-lifetime registration traps, and mis-registered services.
 ---
 
 ## 0. Know the Contract Before You `[Inject]`
