@@ -254,9 +254,11 @@ public interface IMyService {}
       runResult.GeneratedTrees.Select(t => t.GetText().ToString()));
 
     // OnInjected should come after all member assignments
-    // Note: no parentheses around the range bound — Rider's parser misreports
-    // range expressions with a parenthesized left bound (RSRP bug class).
-    var injectBody = generated[generated.IndexOf("void Inject", StringComparison.Ordinal)..];
+    // Deliberately avoids the range operator: Rider's parser misreports
+    // `string[expr..]` slices, and the false error poisons the whole
+    // test project's analysis. Substring is equivalent here.
+    int injectStart = generated.IndexOf("void Inject", StringComparison.Ordinal);
+    var injectBody = generated.Substring(injectStart);
     var lastAssignment = injectBody.LastIndexOf("= services.", StringComparison.Ordinal);
     var onInjectedPos = injectBody.IndexOf("OnInjected();", StringComparison.Ordinal);
     Assert.True(
