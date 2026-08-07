@@ -12,12 +12,13 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 {
   public void Initialize(IncrementalGeneratorInitializationContext context)
   {
-    var singleton = CreateProvider(context, Attributes.SingletonFull, "Singleton");
-    var singletonGeneric = CreateProvider(context, Attributes.SingletonGenericFull, "Singleton");
-    var transient = CreateProvider(context, Attributes.TransientFull, "Transient");
-    var transientGeneric = CreateProvider(context, Attributes.TransientGenericFull, "Transient");
-    var scoped = CreateProvider(context, Attributes.ScopedFull, "Scoped");
-    var scopedGeneric = CreateProvider(context, Attributes.ScopedGenericFull, "Scoped");
+    var singleton = CreateProvider(context, Attributes.SingletonFull, "Singleton", ServiceKind.Self);
+    var singletonGeneric = CreateProvider(context, Attributes.SingletonGenericFull, "Singleton", ServiceKind.Generic);
+    var transient = CreateProvider(context, Attributes.TransientFull, "Transient", ServiceKind.Self);
+    var transientGeneric = CreateProvider(context, Attributes.TransientGenericFull, "Transient", ServiceKind.Generic);
+    var scoped = CreateProvider(context, Attributes.ScopedFull, "Scoped", ServiceKind.Self);
+    var scopedGeneric = CreateProvider(context, Attributes.ScopedGenericFull, "Scoped", ServiceKind.Generic);
+    var alsoAs = CreateProvider(context, Attributes.AlsoAsFull, "AlsoAs", ServiceKind.AlsoAs);
 
     var allServices = singleton
         .Collect().Select(static (items, _) => items.AsEquatable())
@@ -26,11 +27,24 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         .Combine(transientGeneric.Collect().Select(static (items, _) => items.AsEquatable()))
         .Combine(scoped.Collect().Select(static (items, _) => items.AsEquatable()))
         .Combine(scopedGeneric.Collect().Select(static (items, _) => items.AsEquatable()))
+        .Combine(alsoAs.Collect().Select(static (items, _) => items.AsEquatable()))
         .Select((x, _) =>
         {
-          var (((((s, sg), t), tg), sc), scg) = x;
-          return s.Concat(sg).Concat(t).Concat(tg).Concat(sc).Concat(scg).ToEquatableArray();
+          var ((((((s, sg), t), tg), sc), scg), a) = x;
+          // Distinct: ForAttributeWithMetadataName invokes the transform once per
+          // attribute instance, each time with the full attribute list.
+          return s.Concat(sg).Concat(t).Concat(tg).Concat(sc).Concat(scg).Concat(a).Distinct().ToEquatableArray();
         });
+
+    var invalidAlsoAs = context.SyntaxProvider
+        .ForAttributeWithMetadataName(
+            Attributes.AlsoAsFull,
+            predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
+            transform: static (ctx, _) => ValidateAlsoAsType(ctx))
+        .Where(static d => d != null)
+        .Select(static (d, _) => d!)
+        .Collect()
+        .Select(static (items, _) => items.AsEquatable());
 
     var serviceRegistrarProvider = context.SyntaxProvider
         .ForAttributeWithMetadataName(
@@ -45,29 +59,55 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
     var input = serviceRegistrarProvider.Combine(allServices);
 
     context.RegisterSourceOutput(input, Execute);
+
+    context.RegisterSourceOutput(invalidAlsoAs, static (spc, diagnostics) =>
+    {
+      foreach (var d in diagnostics)
+        spc.ReportDiagnostic(Diagnostic.Create(d.Descriptor, d.Location?.ToLocation(), d.Arguments.ToArray()));
+    });
   }
 
   private static IncrementalValuesProvider<ServiceInfo> CreateProvider(
       IncrementalGeneratorInitializationContext context,
       string attributeName,
-      string lifetime)
+      string lifetime,
+      ServiceKind kind)
   {
     return context.SyntaxProvider
         .ForAttributeWithMetadataName(
             attributeName,
             predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
-            transform: (ctx, _) => Transform(ctx, lifetime))
+            transform: (ctx, _) => Transform(ctx, lifetime, kind))
         .SelectMany(static (items, _) => items);
   }
 
-  private static IEnumerable<ServiceInfo> Transform(GeneratorAttributeSyntaxContext context, string lifetime)
+  private static DiagnosticInfo? ValidateAlsoAsType(GeneratorAttributeSyntaxContext context)
+  {
+    if (context.TargetSymbol is not INamedTypeSymbol classSymbol)
+      return null;
+
+    foreach (var attr in context.Attributes)
+    {
+      if (IsAlsoAsCompatible(attr, classSymbol))
+        continue;
+
+      var tAlso = attr.AttributeClass?.TypeArguments.FirstOrDefault();
+      string typeName = tAlso?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) ?? "?";
+      return DiagnosticInfo.Create(Descriptors.AlsoAsTypeNotImplemented, context.TargetNode, typeName, classSymbol.Name);
+    }
+    return null;
+  }
+
+  private static IEnumerable<ServiceInfo> Transform(GeneratorAttributeSyntaxContext context, string lifetime, ServiceKind kind)
   {
     if (context.TargetSymbol is not INamedTypeSymbol { TypeKind: TypeKind.Class or TypeKind.Struct } classSymbol)
       yield break;
 
     foreach (var attr in context.Attributes)
     {
-      bool isGeneric = attr.AttributeClass?.IsGenericType ?? false;
+      if (kind == ServiceKind.AlsoAs && !IsAlsoAsCompatible(attr, classSymbol))
+        continue;
+
       bool isEnumerable = false;
       string? keyExpression = null;
 
@@ -90,13 +130,23 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
       string implementationType = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
       string serviceType = implementationType;
 
-      if (isGeneric && attr.AttributeClass?.TypeArguments.Length > 0)
+      if (kind is ServiceKind.Generic or ServiceKind.AlsoAs)
       {
-        serviceType = attr.AttributeClass.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        serviceType = attr.AttributeClass!.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
       }
 
-      yield return new ServiceInfo(implementationType, serviceType, lifetime, isEnumerable, classSymbol.ContainingAssembly.Name, keyExpression);
+      yield return new ServiceInfo(
+          implementationType, serviceType, lifetime, isEnumerable,
+          classSymbol.ContainingAssembly.Name, keyExpression, kind,
+          LocationInfo.CreateFrom(classSymbol.Locations.FirstOrDefault()));
     }
+  }
+
+  private static bool IsAlsoAsCompatible(AttributeData attr, INamedTypeSymbol classSymbol)
+  {
+    var tAlso = attr.AttributeClass?.TypeArguments.FirstOrDefault();
+    return tAlso is INamedTypeSymbol { TypeKind: TypeKind.Interface } alsoAsType
+        && classSymbol.AllInterfaces.Contains(alsoAsType, SymbolEqualityComparer.Default);
   }
 
   private static ServiceRegistrarInfo? TransformServiceRegistrar(GeneratorAttributeSyntaxContext ctx)
@@ -135,24 +185,84 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
 
     var tableInfo = tables[0];
     var statements = new List<StatementSyntax>();
-    foreach (var service in services)
+    foreach (var group in services.GroupBy(static s => s.ImplementationType))
     {
-      string lifetime = $"ServiceLifetime.{service.Lifetime}";
+      List<ServiceInfo> items = group.ToList();
+      List<ServiceInfo> mains = items.Where(static i => i.Kind != ServiceKind.AlsoAs).ToList();
+      List<ServiceInfo> alsoAs = items.Where(static i => i.Kind == ServiceKind.AlsoAs).ToList();
 
-      if (service.ServiceType == service.ImplementationType)
+      // R0: exactly one lifetime per type.
+      if (mains.Select(static m => m.Lifetime).Distinct().Count() > 1)
       {
-        statements.Add(ParseStatement($"ServiceRegistrarHelper.EnsureConcreteType<{service.ImplementationType}>();"));
+        foreach (ServiceInfo m in mains)
+          context.ReportDiagnostic(Diagnostic.Create(Descriptors.MultipleLifetimes, m.Location?.ToLocation(), m.ImplementationType));
+        continue;
       }
-      else
+
+      // R1: self registration and generic registration are mutually exclusive within a lifetime.
+      if (mains.Any(static m => m.Kind == ServiceKind.Self) && mains.Any(static m => m.Kind == ServiceKind.Generic))
       {
-        statements.Add(ParseStatement($"ServiceRegistrarHelper.VerifyImplementation<{service.ServiceType}, {service.ImplementationType}>();"));
+        foreach (ServiceInfo m in mains)
+          context.ReportDiagnostic(Diagnostic.Create(Descriptors.SelfAndGenericInSameLifetime, m.Location?.ToLocation(), m.ImplementationType));
+        continue;
       }
 
-      string descriptor = service.KeyExpression is null
-          ? $"new ServiceDescriptor(typeof({service.ServiceType}), typeof({service.ImplementationType}), {lifetime})"
-          : $"ServiceDescriptor.Keyed{service.Lifetime}(typeof({service.ServiceType}), {service.KeyExpression}, typeof({service.ImplementationType}))";
+      foreach (ServiceInfo m in mains)
+      {
+        string lifetime = $"ServiceLifetime.{m.Lifetime}";
 
-      statements.Add(ParseStatement($"services.{(service.IsEnumerable ? "Add" : "TryAdd")}({descriptor});"));
+        if (m.ServiceType == m.ImplementationType)
+        {
+          statements.Add(ParseStatement($"ServiceRegistrarHelper.EnsureConcreteType<{m.ImplementationType}>();"));
+        }
+        else
+        {
+          statements.Add(ParseStatement($"ServiceRegistrarHelper.VerifyImplementation<{m.ServiceType}, {m.ImplementationType}>();"));
+        }
+
+        string descriptor = m.KeyExpression is null
+            ? $"new ServiceDescriptor(typeof({m.ServiceType}), typeof({m.ImplementationType}), {lifetime})"
+            : $"ServiceDescriptor.Keyed{m.Lifetime}(typeof({m.ServiceType}), {m.KeyExpression}, typeof({m.ImplementationType}))";
+
+        statements.Add(ParseStatement($"services.{(m.IsEnumerable ? "Add" : "TryAdd")}({descriptor});"));
+      }
+
+      if (alsoAs.Count == 0)
+        continue;
+
+      if (mains.Count == 0)
+      {
+        foreach (ServiceInfo a in alsoAs)
+          context.ReportDiagnostic(Diagnostic.Create(Descriptors.AlsoAsMissingMain, a.Location?.ToLocation(), a.ImplementationType));
+        continue;
+      }
+
+      if (mains.All(static m => m.Lifetime == "Transient"))
+      {
+        foreach (ServiceInfo a in alsoAs)
+          context.ReportDiagnostic(Diagnostic.Create(Descriptors.AlsoAsOnTransient, a.Location?.ToLocation(), a.ImplementationType));
+        continue;
+      }
+
+      if (mains.Count > 1)
+      {
+        foreach (ServiceInfo a in alsoAs)
+          context.ReportDiagnostic(Diagnostic.Create(Descriptors.AlsoAsAmbiguousMain, a.Location?.ToLocation(), a.ImplementationType));
+        continue;
+      }
+
+      ServiceInfo main = mains[0];
+      if (main.IsEnumerable)
+      {
+        foreach (ServiceInfo a in alsoAs)
+          context.ReportDiagnostic(Diagnostic.Create(Descriptors.AlsoAsOnEnumerableMain, a.Location?.ToLocation(), a.ImplementationType));
+        continue;
+      }
+
+      foreach (ServiceInfo a in alsoAs)
+      {
+        statements.Add(ParseStatement($"services.{(a.IsEnumerable ? "Add" : "TryAdd")}({BuildForwardDescriptor(a, main)});"));
+      }
     }
 
     var method = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), "RegisterServices")
@@ -192,5 +302,35 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
         .WithLeadingTrivia(ParseLeadingTrivia("// <auto-generated/>\r\n"));
 
     context.AddSource($"{tableInfo.ClassName}.g.cs", compilationUnit.ToFullString());
+  }
+
+  private static string BuildForwardDescriptor(ServiceInfo alsoAs, ServiceInfo main)
+  {
+    string lifetime = $"ServiceLifetime.{main.Lifetime}";
+    string factory;
+
+    if (main.Kind == ServiceKind.Self)
+    {
+      // The main registration is the concrete class itself: the instance is
+      // guaranteed to be assignable to the AlsoAs type, no defensive cast needed.
+      string source = main.KeyExpression is null
+          ? $"sp.GetRequiredService<{main.ImplementationType}>()"
+          : $"sp.GetRequiredKeyedService<{main.ImplementationType}>({main.KeyExpression})";
+      factory = $"sp => {source}";
+    }
+    else
+    {
+      // The main registration is a service type: under TryAdd the service may be
+      // claimed by another implementation, so verify the resolved instance.
+      string resolve = main.KeyExpression is null
+          ? $"sp.GetRequiredService<{main.ServiceType}>()"
+          : $"sp.GetRequiredKeyedService<{main.ServiceType}>({main.KeyExpression})";
+      factory = $"sp => {{ var s = {resolve}; return s is {alsoAs.ServiceType} b ? b : throw new global::System.InvalidOperationException(" +
+                $"\"AlsoAs forwarding of {alsoAs.ServiceType} via {main.ServiceType} failed: the main service is claimed by another implementation.\"); }}";
+    }
+
+    return alsoAs.KeyExpression is null
+        ? $"new ServiceDescriptor(typeof({alsoAs.ServiceType}), {factory}, {lifetime})"
+        : $"new ServiceDescriptor(typeof({alsoAs.ServiceType}), {alsoAs.KeyExpression}, {factory}, {lifetime})";
   }
 }

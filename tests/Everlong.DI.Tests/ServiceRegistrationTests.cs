@@ -46,6 +46,30 @@ public class MultiKeyedServiceA : IMultiKeyedService;
 [Singleton<IMultiKeyedService>("multi", enumerable: true)]
 public class MultiKeyedServiceB : IMultiKeyedService;
 
+public interface ISharedSelf;
+public interface ISharedGenericMain;
+public interface ISharedGenericSide;
+public interface ISharedKeyedSide;
+public interface ISharedEnumerable;
+public interface IScopedSharedView;
+
+[Scoped]
+[AlsoAs<IScopedSharedView>]
+public class ScopedSharedService : IScopedSharedView;
+
+[Singleton]
+[AlsoAs<ISharedSelf>]
+[AlsoAs<ISharedEnumerable>(enumerable: true)]
+public class SharedService : ISharedSelf, ISharedEnumerable;
+
+[Singleton<ISharedGenericMain>]
+[AlsoAs<ISharedGenericSide>]
+public class SharedGenericService : ISharedGenericMain, ISharedGenericSide;
+
+[Singleton<ISharedGenericMain>("sgk")]
+[AlsoAs<ISharedKeyedSide>]
+public class SharedKeyedService : ISharedGenericMain, ISharedKeyedSide;
+
 [ServiceRegistrar]
 public partial class TestServiceRegistrar;
 
@@ -146,5 +170,61 @@ public class ServiceRegistrationTests
     var multi = provider.GetKeyedServices<IMultiKeyedService>("multi");
     Assert.Equal(2, multi.Count());
     Assert.All(multi, service => Assert.NotNull(service));
+  }
+
+  [Fact]
+  public void TestAlsoAsSharedInstance()
+  {
+    IServiceCollection services = new ServiceCollection();
+
+    IServiceRegistrar registrar = new TestServiceRegistrar();
+
+    registrar.RegisterServices(services);
+
+    var provider = services.BuildServiceProvider();
+
+    var concrete = provider.GetRequiredService<SharedService>();
+    var selfView = provider.GetRequiredService<ISharedSelf>();
+    Assert.Same(concrete, selfView);
+
+    var enumerableViews = provider.GetServices<ISharedEnumerable>();
+    var single = Assert.Single(enumerableViews);
+    Assert.Same(concrete, single);
+
+    // Generic main + AlsoAs share one instance.
+    var genericMain = provider.GetRequiredService<ISharedGenericMain>();
+    var genericSide = provider.GetRequiredService<ISharedGenericSide>();
+    Assert.Same(genericMain, genericSide);
+
+    // Keyed main + unkeyed AlsoAs share one instance.
+    var keyedMain = provider.GetRequiredKeyedService<ISharedGenericMain>("sgk");
+    var keyedSide = provider.GetRequiredService<ISharedKeyedSide>();
+    Assert.Same(keyedMain, keyedSide);
+    Assert.IsType<SharedKeyedService>(keyedSide);
+  }
+
+  [Fact]
+  public void TestAlsoAsScopedInstance()
+  {
+    IServiceCollection services = new ServiceCollection();
+
+    IServiceRegistrar registrar = new TestServiceRegistrar();
+
+    registrar.RegisterServices(services);
+
+    var provider = services.BuildServiceProvider();
+
+    using (var scope = provider.CreateScope())
+    {
+      var scoped = scope.ServiceProvider.GetRequiredService<ScopedSharedService>();
+      var view = scope.ServiceProvider.GetRequiredService<IScopedSharedView>();
+      Assert.Same(scoped, view);
+
+      using (var scope2 = provider.CreateScope())
+      {
+        var scoped2 = scope2.ServiceProvider.GetRequiredService<ScopedSharedService>();
+        Assert.NotSame(scoped, scoped2);
+      }
+    }
   }
 }

@@ -14,6 +14,13 @@ internal static class Descriptors
   internal const string ReadonlyInjectionId = "DIG0008";
   internal const string InjectableRequiredId = "DIG0009";
   internal const string FieldInjectionToPropertyId = "DIG0010";
+  internal const string AlsoAsMissingMainId = "DIG0011";
+  internal const string AlsoAsOnTransientId = "DIG0012";
+  internal const string AlsoAsAmbiguousMainId = "DIG0013";
+  internal const string AlsoAsOnEnumerableMainId = "DIG0014";
+  internal const string SelfAndGenericInSameLifetimeId = "DIG0015";
+  internal const string MultipleLifetimesId = "DIG0016";
+  internal const string AlsoAsTypeNotImplementedId = "DIG0017";
 
   internal static class Category
   {
@@ -84,6 +91,62 @@ internal static class Descriptors
     MultipleServiceTablesId,
     "Multiple ServiceRegistrar attributes",
     "Multiple [ServiceRegistrar] attributes found. Only one ServiceRegistrar is allowed per assembly.",
+    Category.Configuration,
+    DiagnosticSeverity.Error,
+    isEnabledByDefault: true);
+
+  internal static readonly DiagnosticDescriptor AlsoAsMissingMain = new(
+    AlsoAsMissingMainId,
+    "AlsoAs without main registration",
+    "Type '{0}' uses [AlsoAs] but has no [Singleton]/[Scoped] registration to share. Add [Singleton] or [Scoped].",
+    Category.Configuration,
+    DiagnosticSeverity.Error,
+    isEnabledByDefault: true);
+
+  internal static readonly DiagnosticDescriptor AlsoAsOnTransient = new(
+    AlsoAsOnTransientId,
+    "AlsoAs on transient registration",
+    "Type '{0}' uses [AlsoAs] with a transient registration; transient services have no shared instance. Use [Singleton] or [Scoped].",
+    Category.Configuration,
+    DiagnosticSeverity.Error,
+    isEnabledByDefault: true);
+
+  internal static readonly DiagnosticDescriptor AlsoAsAmbiguousMain = new(
+    AlsoAsAmbiguousMainId,
+    "Ambiguous AlsoAs main registration",
+    "Type '{0}' uses [AlsoAs] but has multiple main registrations; exactly one [Singleton]/[Scoped] registration is allowed with [AlsoAs]",
+    Category.Configuration,
+    DiagnosticSeverity.Error,
+    isEnabledByDefault: true);
+
+  internal static readonly DiagnosticDescriptor AlsoAsOnEnumerableMain = new(
+    AlsoAsOnEnumerableMainId,
+    "AlsoAs on enumerable main registration",
+    "Type '{0}' uses [AlsoAs] with an enumerable main registration; a single instance cannot be resolved. Remove enumerable from the main registration.",
+    Category.Configuration,
+    DiagnosticSeverity.Error,
+    isEnabledByDefault: true);
+
+  internal static readonly DiagnosticDescriptor SelfAndGenericInSameLifetime = new(
+    SelfAndGenericInSameLifetimeId,
+    "Self and generic registration in the same lifetime",
+    "Type '{0}' mixes a self registration ([Singleton]) with a generic registration ([Singleton<T>]) in the same lifetime. Use [Singleton] + [AlsoAs<T>] to share one instance, or multiple [Singleton<T>] for independent instances.",
+    Category.Configuration,
+    DiagnosticSeverity.Error,
+    isEnabledByDefault: true);
+
+  internal static readonly DiagnosticDescriptor MultipleLifetimes = new(
+    MultipleLifetimesId,
+    "Multiple lifetimes on one type",
+    "Type '{0}' mixes registrations with different lifetimes ([Singleton]/[Scoped]/[Transient]); exactly one lifetime is allowed per type",
+    Category.Configuration,
+    DiagnosticSeverity.Error,
+    isEnabledByDefault: true);
+
+  internal static readonly DiagnosticDescriptor AlsoAsTypeNotImplemented = new(
+    AlsoAsTypeNotImplementedId,
+    "AlsoAs type not implemented",
+    "AlsoAs type '{0}' must be an interface implemented by '{1}'",
     Category.Configuration,
     DiagnosticSeverity.Error,
     isEnabledByDefault: true);

@@ -37,7 +37,7 @@ public class TransientAttribute : Attribute
 /// Marks a class to be registered as a transient service for a specific service type.
 /// </summary>
 /// <typeparam name="TAbstract">The service type.</typeparam>
-[AttributeUsage(AttributeTargets.Class, Inherited = false)]
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public class TransientAttribute<TAbstract> : Attribute
 {
   /// <summary>
@@ -66,7 +66,7 @@ public class TransientAttribute<TAbstract> : Attribute
   /// </summary>
   /// <param name="key">The key of the service.</param>
   /// <param name="enumerable">Whether to register as an enumerable service.</param>
-  public TransientAttribute(object key, bool enumerable = false)
+  public TransientAttribute(object? key = null, bool enumerable = false)
   {
     Key = key;
     IsEnumerable = enumerable;
@@ -100,7 +100,7 @@ public class SingletonAttribute : Attribute
 /// Marks a class to be registered as a singleton service for a specific service type.
 /// </summary>
 /// <typeparam name="T">The service type.</typeparam>
-[AttributeUsage(AttributeTargets.Class, Inherited = false)]
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public class SingletonAttribute<T> : Attribute
 {
   /// <summary>
@@ -129,7 +129,50 @@ public class SingletonAttribute<T> : Attribute
   /// </summary>
   /// <param name="key">The key of the service.</param>
   /// <param name="enumerable">Whether to register as an enumerable service.</param>
-  public SingletonAttribute(object key, bool enumerable = false)
+  public SingletonAttribute(object? key = null, bool enumerable = false)
+  {
+    Key = key;
+    IsEnumerable = enumerable;
+  }
+}
+
+/// <summary>
+/// Marks an additional service type through which the class's single registered instance is exposed.
+/// The class must carry exactly one <see cref="SingletonAttribute"/>, <see cref="SingletonAttribute{T}"/>,
+/// <see cref="ScopedAttribute"/> or <see cref="ScopedAttribute{TAbstract}"/> registration as its main
+/// registration; every <see cref="AlsoAsAttribute{TAlso}"/> adds one shared view of that instance.
+/// </summary>
+/// <typeparam name="TAlso">The additional service type (an interface implemented by the class).</typeparam>
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+public class AlsoAsAttribute<TAlso> : Attribute
+{
+  /// <summary>
+  /// Gets a value indicating whether the current instance supports enumeration of its elements.
+  /// </summary>
+  public bool IsEnumerable { get; }
+
+  /// <summary>
+  /// Gets the key of the service registration (for keyed DI), or <see langword="null"/> for an unkeyed registration.
+  /// </summary>
+  public object? Key { get; }
+
+  /// <summary>
+  /// Initializes a new instance of the <see cref="AlsoAsAttribute{TAlso}"/> class (unkeyed).
+  /// </summary>
+  public AlsoAsAttribute() { }
+
+  /// <summary>
+  /// Initializes a new instance of the <see cref="AlsoAsAttribute{TAlso}"/> class (unkeyed).
+  /// </summary>
+  /// <param name="isEnumerable">Whether to register as an enumerable service.</param>
+  public AlsoAsAttribute(bool isEnumerable) => IsEnumerable = isEnumerable;
+
+  /// <summary>
+  /// Initializes a new instance of the <see cref="AlsoAsAttribute{TAlso}"/> class with a service key.
+  /// </summary>
+  /// <param name="key">The key of the service.</param>
+  /// <param name="enumerable">Whether to register as an enumerable service.</param>
+  public AlsoAsAttribute(object? key = null, bool enumerable = false)
   {
     Key = key;
     IsEnumerable = enumerable;
@@ -163,7 +206,7 @@ public class ScopedAttribute : Attribute
 /// Marks a class to be registered as a scoped service for a specific service type.
 /// </summary>
 /// <typeparam name="TAbstract">The service type.</typeparam>
-[AttributeUsage(AttributeTargets.Class, Inherited = false)]
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public class ScopedAttribute<TAbstract> : Attribute
 {
   /// <summary>
@@ -192,7 +235,7 @@ public class ScopedAttribute<TAbstract> : Attribute
   /// </summary>
   /// <param name="key">The key of the service.</param>
   /// <param name="enumerable">Whether to register as an enumerable service.</param>
-  public ScopedAttribute(object key, bool enumerable = false)
+  public ScopedAttribute(object? key = null, bool enumerable = false)
   {
     Key = key;
     IsEnumerable = enumerable;

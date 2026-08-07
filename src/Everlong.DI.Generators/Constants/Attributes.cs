@@ -11,6 +11,7 @@ internal static class Attributes
   internal const string TransientGenericFull = $"{Ns.DiNamespace}.TransientAttribute`1";
   internal const string ScopedFull = $"{Ns.DiNamespace}.ScopedAttribute";
   internal const string ScopedGenericFull = $"{Ns.DiNamespace}.ScopedAttribute`1";
+  internal const string AlsoAsFull = $"{Ns.DiNamespace}.AlsoAsAttribute`1";
 
   internal const string ServiceRegistrar = "ServiceRegistrarAttribute";
   internal const string ServiceRegistrarFull = $"{Ns.DiNamespace}.{ServiceRegistrar}";
