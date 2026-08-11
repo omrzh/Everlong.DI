@@ -24,13 +24,32 @@ partial class MemberInjectionGenerator
 
       if (typeSymbol.DeclaringSyntaxReferences.Length > 1)
       {
-        var canonicalDeclaration = typeSymbol.DeclaringSyntaxReferences
-          .OrderBy(static r => r.SyntaxTree.FilePath, StringComparer.Ordinal)
-          .ThenBy(static r => r.Span.Start)
-          .First();
-        if (!ReferenceEquals(classDeclaration.SyntaxTree, canonicalDeclaration.SyntaxTree)
-            || classDeclaration.Span != canonicalDeclaration.Span)
-          return new Result<InjectionInfo?>(null, diagnostics.ToImmutable());
+        // Canonical 判定不能依赖 SyntaxTree.FilePath 的字符串排序:csc 收到的路径形态
+        // (默认 glob 相对路径 / 显式 Include 相对路径 / 绝对路径)因项目而异,
+        // [Injectable] 部分可能排在普通 partial 部分之后 → 生成被静默跳过 (CS9248)。
+        // [Injectable] 是 AllowMultiple=false 的属性,同一类型至多一个部分挂它
+        // (否则 CS0579),因此属性命中的声明就是 canonical 目标,路径排序去重纯属多余。
+        // 只有当多个部分都挂了以 "Injectable" 结尾的属性(病态场景:两个程序集各有一个
+        // 同名 InjectableAttribute)时才需要按路径去重,保证只生成一份输出。
+        bool anotherPartCarriesInjectable = typeSymbol.DeclaringSyntaxReferences
+          .Where(r => !ReferenceEquals(r.SyntaxTree, classDeclaration.SyntaxTree)
+                      || r.Span != classDeclaration.Span)
+          .Select(r => r.GetSyntax(token))
+          .OfType<TypeDeclarationSyntax>()
+          .SelectMany(static t => t.AttributeLists)
+          .SelectMany(static l => l.Attributes)
+          .Any(a => a.Name.ToString().EndsWith("Injectable", StringComparison.Ordinal));
+
+        if (anotherPartCarriesInjectable)
+        {
+          var canonicalDeclaration = typeSymbol.DeclaringSyntaxReferences
+            .OrderBy(static r => r.SyntaxTree.FilePath, StringComparer.Ordinal)
+            .ThenBy(static r => r.Span.Start)
+            .First();
+          if (!ReferenceEquals(classDeclaration.SyntaxTree, canonicalDeclaration.SyntaxTree)
+              || classDeclaration.Span != canonicalDeclaration.Span)
+            return new Result<InjectionInfo?>(null, diagnostics.ToImmutable());
+        }
       }
 
       HierarchyInfo hierarchy = HierarchyInfo.From(typeSymbol);

@@ -135,6 +135,8 @@ public partial class MyService : IInjectable
 
 `OnInjected()` is only called when injection actually runs — the idempotency guard short-circuits before it. For `Reinjectable = false` classes it therefore runs exactly once, on the first `Inject()` call; for reinjectable classes it runs on every call.
 
+Types may be split across multiple partial files (e.g. shared logic in one file, platform-specific members in another). `[Injectable]` must appear on exactly **one** part (it is not `AllowMultiple` — two parts carrying it is CS0579); `[Inject]` members may live on any part. Generation is driven by the `[Injectable]` hit, never by file path ordering.
+
 ### 1.8 Inheritance — `Inject()` chains through base classes.
 
 If the immediate base class is injectable (implements `IInjectable` or declares its own `[Inject]` members), the generated method is emitted as `public override` and calls `base.Inject(services)` first:

@@ -68,6 +68,7 @@ public virtual void Inject(IServiceProvider services)
 - **`partial void OnInjected()`**: runs after every successful injection.
 - **Inheritance**: `Inject()` chains through base classes (`override` + `base.Inject(services)`).
 - **Partial properties**: `[Inject] public partial ILogger Logger { get; }` generates a backing field — requires `<LangVersion>preview</LangVersion>`.
+- **Split partial classes**: a type may be split across several partial files (e.g. shared logic + platform-specific parts). `[Injectable]` goes on exactly one part; `[Inject]` members may live on any part. Generation is driven by the `[Injectable]` hit, never by file path ordering.
 
 ---
 

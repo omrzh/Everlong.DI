@@ -1,8 +1,8 @@
-# TMP-BUG: MemberInjectionGenerator 多 partial 部分时 canonical 选择按路径字符串排序，属性不在 canonical 部分则静默跳过生成
+# TMP-BUG: MemberInjectionGenerator 多 partial 部分时 canonical 选择按路径字符串排序,属性不在 canonical 部分则静默跳过生成
 
-> ⚠️ 临时排障文档（2026-08，由 Everlong.Nester 模板重构触发）。Everlong.DI agent 处理完此 bug 后可删除本文档。
+> ✅ **已修复(2026-08,方案 B)**：`MemberInjectionGenerator.Transform.cs` 的 canonical 去重仅在"多个部分都挂以 `Injectable` 结尾的属性"时才按路径执行;正常场景(至多一个部分挂 `[Injectable]`)以属性命中为准,不再依赖 `SyntaxTree.FilePath` 排序。回归测试：`MemberInjectionGeneratorTests.Generate_When_Multiple_Partials_And_Injectable_Part_Sorts_Last_By_Path`(红转绿)+ 两个护栏测试。Everlong.DI agent 侧工作已完成,本文档保留仅因 Nester 侧跟进项(见文末)尚未执行;Nester 恢复 `[Injectable]` 后可删除本文档。
 >
-> **更新（Nester 侧已绕过）**：Nester 模板已临时改为手写 `Inject()` override（`Template.Shared/Pages/Shell/MainViewModel.cs`，类上 `[Injectable]` 已移除），四个编译单元全绿、303 测试通过。本文档保留供 Everlong.DI 修复生成器本体；Nester 侧会在修复发版后恢复 `[Injectable]` + `[Inject]` partial 属性并删除手写代码（共享文件内有注释标记）。
+> **更新（Nester 侧已绕过）**：Nester 模板已临时改为手写 `Inject()` override（`Template.Shared/Pages/Shell/MainViewModel.cs`,类上 `[Injectable]` 已移除）,四个编译单元全绿、303 测试通过。本文档保留供 Everlong.DI 修复生成器本体;Nester 侧会在修复发版后恢复 `[Injectable]` + `[Inject]` partial 属性并删除手写代码（共享文件内有注释标记）。
 
 ## 现象
 
