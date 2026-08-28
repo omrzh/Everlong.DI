@@ -348,6 +348,8 @@ Every injected member is resolved via a direct generic call emitted as source co
 
 | ID | Severity | Meaning |
 |----|----------|---------|
+| DIG0001 | Error | Generator internal error at transform phase (input, message, stack) — file a bug |
+| DIG0002 | Error | Source Generator Exception at execution phase (input, message, stack) — file a bug |
 | DIG0003 | Error | More than one `[ServiceRegistrar]` per assembly |
 | DIG0004 | Error | Non-partial `[Inject]` property has no setter |
 | DIG0005 | Error | `[Inject]` member is `static` |

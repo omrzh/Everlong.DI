@@ -58,7 +58,7 @@ public virtual void Inject(IServiceProvider services)
 | **Auto-inject wrapper** | `services.AddInjector();` then resolve through `IInjectorServiceProvider` — every resolved `IInjectable` is injected automatically |
 | **Framework interceptor** | Your own IoC integration calls `Inject()` during activation |
 
-`AddInjector()` registers `IInjectorServiceProvider` (scoped by default; pass `ServiceLifetime.Singleton` to change). The wrapper implements `IKeyedServiceProvider`, so keyed resolves get injected too.
+`AddInjector()` registers two services: `IInjectorServiceProvider` (scoped by default; pass `ServiceLifetime.Singleton` to change) and `IInjector` (forwarded to the wrapper). The wrapper implements `IKeyedServiceProvider`, so keyed resolves get injected too.
 
 ## Details worth knowing
 
