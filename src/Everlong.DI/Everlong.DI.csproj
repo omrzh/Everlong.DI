@@ -22,7 +22,7 @@
     <RepositoryUrl>https://github.com/omrzh/Everlong.DI.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageReleaseNotes>0.1.0: Fix source generator for generic [Injectable] partial classes — valid hint names and type-parameter constraint clauses; generated files declare an explicit nullable context. Fix [ServiceRegistrar] generation for classes in the global namespace.</PackageReleaseNotes>
+    <PackageReleaseNotes>0.3.0: Add IScopeMarker scope detection — AddScopeMarker()/IsScoped() tell a child scope from the root provider (marker exposes IsRootScope).</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
