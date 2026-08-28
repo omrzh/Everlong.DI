@@ -164,6 +164,20 @@ public partial class DerivedService : BaseService
 
 Each class in the hierarchy gets its own idempotency guard and its own `OnInjected()` call; `Reinjectable` is read from the class's own `[Injectable]` attribute. On a `sealed` class the generated method is a plain `public void Inject(...)` — neither `virtual` nor `override`.
 
+### 1.9 Scope detection — `AddScopeMarker` / `IsScoped`.
+
+Register the marker to make scope-ness observable at runtime:
+
+```csharp
+services.AddScopeMarker();              // registers IScopeMarker as scoped
+var root = services.BuildServiceProvider();
+root.IsScoped();                        // false — root provider
+using var scope = root.CreateScope();
+scope.ServiceProvider.IsScoped();       // true — child scope
+```
+
+`IsScoped()` returns `false` for the root provider, for providers without the marker registered, and when scoped resolution from the root throws under `ValidateScopes`. The marker exposes `IsRootScope` for the raw signal. Detection relies on MS DI resolving `IServiceScopeFactory` against the root scope and `IServiceProvider` against the current scope — keep the default MS container and register the marker only via `AddScopeMarker()`.
+
 ---
 
 ## 2. Service Registration Attributes
@@ -327,6 +341,7 @@ Every injected member is resolved via a direct generic call emitted as source co
 | `[AlsoAs<T>]` without a main, on a transient main, with several mains, on an enumerable main, or with a type the class does not implement | Errors DIG0011–0014, DIG0017. Exactly one non-transient, non-enumerable `[Singleton]`/`[Scoped]` main; `T` must be an implemented interface. |
 | `[ServiceRegistrar]` on a non-partial class | The generator skips it silently; `RegisterServices()` is never implemented (CS0535 if you declared `IServiceRegistrar`). Keep the registrar class partial. |
 | More than one `[ServiceRegistrar]` class per assembly | Generator error DIG0003 — exactly one registrar is allowed per assembly. |
+| Re-registering `IScopeMarker` yourself instead of `AddScopeMarker()` | `IsScoped()` relies on the marker being registered exactly as `AddScopeMarker()` does (scoped, default MS container). A custom registration silently breaks the root-vs-scope signal. |
 | Editing generated `*.Inject.g.cs` files | They're overwritten on every build. Change the source attributes instead. |
 
 ### 5.1 Diagnostic quick reference
@@ -359,4 +374,5 @@ Every injected member is resolved via a direct generic call emitted as source co
 - Test shared instances: resolve the main registration and every `[AlsoAs]` view, assert `ReferenceEquals` holds; for scoped mains, assert per-scope sharing and cross-scope isolation.
 - Test keyed registrations: resolve via `GetRequiredKeyedService<T>(key)`, assert keyed and unkeyed spaces do not leak into each other.
 - Use the real DI container (`ServiceCollection` + `BuildServiceProvider`) in tests — don't mock `IServiceProvider` unless you're testing the generator output in isolation.
+- Test scope detection with the real container: root provider → `IsScoped()` false (with and without `ValidateScopes`), child scope (including nested scopes) → true; marker resolves to a shared instance within a scope and different instances across scopes.
 - Snapshot tests (via Verify) are the standard way to validate generated source code — see `tests/Everlong.DI.Tests/DI/Snapshots/` for examples.

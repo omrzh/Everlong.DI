@@ -42,4 +42,39 @@ public static class ServiceCollectionExtensions
     return services;
   }
 
+  /// <summary>
+  ///   Registers the <see cref="IScopeMarker" /> as a scoped service, enabling
+  ///   <see cref="IsScoped" /> on providers built from this collection.
+  /// </summary>
+  /// <param name="services">The service collection.</param>
+  /// <returns>The same service collection for chaining.</returns>
+  public static IServiceCollection AddScopeMarker(this IServiceCollection services)
+  {
+    services.AddScoped<IScopeMarker, ScopeMarker>();
+    return services;
+  }
+
+  /// <summary>
+  ///   Determines whether <paramref name="provider" /> is a child scope of a provider configured
+  ///   with <see cref="AddScopeMarker" />. Returns <see langword="false" /> for the root provider,
+  ///   for providers without the marker registered, and when scoped resolution from the root
+  ///   throws under <c>ValidateScopes</c>.
+  /// </summary>
+  /// <param name="provider">The service provider to test.</param>
+  /// <returns>
+  ///   <see langword="true" /> if the scope marker is registered and <paramref name="provider" />
+  ///   is a child scope; otherwise <see langword="false" />.
+  /// </returns>
+  public static bool IsScoped(this IServiceProvider provider)
+  {
+    ArgumentNullException.ThrowIfNull(provider);
+    try
+    {
+      return provider.GetService<IScopeMarker>() is { } marker && !marker.IsRootScope;
+    }
+    catch (InvalidOperationException)
+    {
+      return false; // scoped resolution from the root throws under ValidateScopes
+    }
+  }
 }

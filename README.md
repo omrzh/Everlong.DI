@@ -69,6 +69,7 @@ public virtual void Inject(IServiceProvider services)
 - **Inheritance**: `Inject()` chains through base classes (`override` + `base.Inject(services)`).
 - **Partial properties**: `[Inject] public partial ILogger Logger { get; }` generates a backing field — requires `<LangVersion>preview</LangVersion>`.
 - **Split partial classes**: a type may be split across several partial files (e.g. shared logic + platform-specific parts). `[Injectable]` goes on exactly one part; `[Inject]` members may live on any part. Generation is driven by the `[Injectable]` hit, never by file path ordering.
+- **Scope detection**: `services.AddScopeMarker();` registers `IScopeMarker` (scoped). `provider.IsScoped()` tells you whether a provider is a child scope — `false` for the root provider, for providers without the marker, and under `ValidateScopes`; the marker itself exposes `IsRootScope`.
 
 ---
 
