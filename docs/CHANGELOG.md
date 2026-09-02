@@ -4,6 +4,15 @@ All notable changes to Everlong.DI. Format: one entry per release, newest first.
 Versions are tagged `v<AppVersion>`; the release workflow builds/tests/packs/pushes
 automatically. Breaking changes are flagged with ⚠️.
 
+## v0.4.1 — 2026-09-03
+
+- Generated public members now carry `/// <inheritdoc/>`: `Inject()` on `[Inject]` /
+  `IAutoInject` classes and `RegisterServices()` on `[ServiceRegistrar]` classes inherit
+  their XML docs from the `IInjectable.Inject` / `IServiceRegistrar.RegisterServices`
+  contracts. Consumers that enable `GenerateDocumentationFile` no longer get CS1591 on
+  Everlong.DI-generated files — those members are only declared in generated code, so
+  they could not be documented from the consumer side.
+
 ## v0.4.0 — 2026-09-03 (v2 — member-injection redesign)
 
 ⚠️ Breaking — the class-level attribute era ends. The `[Injectable]` attribute and the

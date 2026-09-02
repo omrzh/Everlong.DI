@@ -265,11 +265,15 @@ public sealed class ServiceRegistrationGenerator : IIncrementalGenerator
       }
     }
 
+    // Public generated-only member: carry <inheritdoc/> so its XML docs inherit from the
+    // IServiceRegistrar.RegisterServices contract — projects with GenerateDocumentationFile
+    // get no CS1591 on Everlong.DI-generated code.
     var method = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), "RegisterServices")
         .WithModifiers(TokenList(Token(SyntaxKind.PublicKeyword)))
         .WithParameterList(ParameterList(SingletonSeparatedList(
             Parameter(Identifier("services")).WithType(ParseTypeName("IServiceCollection")))))
-        .WithBody(Block(statements));
+        .WithBody(Block(statements))
+        .WithLeadingTrivia(ParseLeadingTrivia("/// <inheritdoc/>\n"));
 
     var modifiers = new List<SyntaxToken> { Token(SyntaxKind.PartialKeyword) };
     var classDecl = ClassDeclaration(tableInfo.ClassName)

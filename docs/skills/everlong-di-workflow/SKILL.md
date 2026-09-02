@@ -112,6 +112,13 @@ copying the generated name), and the ordinary `__` prefix stays free for your ow
 conventions. You never need to read them — `OnInjected()` only runs after the level
 committed, so the guard is always `true` there.
 
+The only generated members users meet head-on — the public `Inject(...)` on every
+injection target, and the registrar's `RegisterServices(...)` — carry `/// <inheritdoc/>`,
+inheriting their XML docs from the `IInjectable.Inject` / `IServiceRegistrar.RegisterServices`
+contracts. They exist only in generated code (editing `*.g.cs` is a red line), so consumers
+cannot document them; with the doc comment in place, projects that enable
+`GenerateDocumentationFile` never get CS1591 pointing at Everlong.DI-generated files.
+
 The guard has **commit semantics**, and each level is **all-or-nothing**: members are
 first resolved into buffer locals; only when every resolution on the level succeeded are
 the members assigned and `Δinjected` set. If the first `GetRequiredService` succeeds and

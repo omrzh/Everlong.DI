@@ -13,7 +13,7 @@
     <!-- Pack-level consumer smoke: consumes Everlong.DI as a real package (analyzers +
          buildTransitive targets + lib), NOT as a ProjectReference. Bump this version with
          every release; keep it in sync with EverlongDI.props. -->
-    <PackageReference Include="Everlong.DI" Version="0.4.0" />
+    <PackageReference Include="Everlong.DI" Version="0.4.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
   </ItemGroup>
 

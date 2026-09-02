@@ -8,6 +8,7 @@ namespace TestApp;
 partial class TestClass : IAutoInject
 {
   private bool Δinjected;
+  /// <inheritdoc/>
   public virtual void Inject(IServiceProvider services)
   {
     if (Δinjected)

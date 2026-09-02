@@ -22,7 +22,7 @@
     <RepositoryUrl>https://github.com/omrzh/Everlong.DI.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageReleaseNotes>0.4.0 (v2, breaking): member injection is now member-anchored — [Inject] members generate Inject() on their own; [Injectable] attribute and Reinjectable are removed; IAutoInject is the class-level marker (derives from IInjectable). Memberless chain levels are transparent; injection is unconditionally idempotent with per-level all-or-nothing commit semantics; generated internals use the reserved Δ prefix. New errors DIG0018/DIG0019 flag hand-written IInjectable.Inject that is non-virtual or explicit on a non-sealed class (codefixes included).</PackageReleaseNotes>
+    <PackageReleaseNotes>0.4.1 — generated public members (Inject() on [Inject]/IAutoInject classes, RegisterServices() on [ServiceRegistrar] classes) carry &lt;inheritdoc/&gt;, inheriting XML docs from the IInjectable / IServiceRegistrar contracts — GenerateDocumentationFile consumers get no CS1591 on Everlong.DI output.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

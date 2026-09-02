@@ -12,6 +12,7 @@ partial class TestClass : IAutoInject
   private global::TestApp.IMyService Δinjected_Service = default !;
   public partial global::TestApp.IMyService Service => Δinjected_Service;
 
+  /// <inheritdoc/>
   public virtual void Inject(IServiceProvider services)
   {
     if (Δinjected)

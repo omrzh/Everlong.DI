@@ -77,6 +77,7 @@ public virtual void Inject(IServiceProvider services)
 - **Inheritance**: `Inject()` chains through the base chain (`override` + `base.Inject(services)`). Intermediate levels that declare no `[Inject]` members are transparent — no marker needed on them. **Sealed**: a sealed chain start gets a plain non-virtual `public void Inject` (nothing could override it — and C# forbids `virtual` in sealed classes); a sealed class in the middle of a chain still emits `override`.
 - **Partial properties**: `[Inject] public partial ILogger Logger { get; }` generates a backing field — requires `<LangVersion>preview</LangVersion>`.
 - **Split partial classes**: a type may be split across several partial files. `[Inject]` members may live on any part; generation is driven by members (or an `IAutoInject` marker), never by file path ordering.
+- **XML docs on generated code**: generated `Inject()` / `RegisterServices()` carry `/// <inheritdoc/>` that inherits the contract docs from `IInjectable` / `IServiceRegistrar` — projects enabling `GenerateDocumentationFile` get no CS1591 on Everlong.DI-generated files.
 - **Scope detection**: `services.AddScopeMarker();` registers `IScopeMarker` (scoped). `provider.IsScoped()` tells you whether a provider is a child scope — `false` for the root provider, for providers without the marker, and under `ValidateScopes`; the marker itself exposes `IsRootScope`.
 
 ---

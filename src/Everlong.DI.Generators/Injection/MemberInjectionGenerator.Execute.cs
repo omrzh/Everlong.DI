@@ -100,11 +100,15 @@ partial class MemberInjectionGenerator
     // overridden — and C# forbids `virtual` in sealed classes anyway (CS0549). The method
     // simply implements the interface contract. sealed + chain → `override` is unaffected.
 
+    // Public generated-only member: carry <inheritdoc/> so its XML docs inherit from the
+    // IInjectable.Inject contract — projects with GenerateDocumentationFile get no CS1591
+    // on Everlong.DI-generated code (the member is only declared here; users cannot doc it).
     var injectMethod = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier(Methods.Inject))
       .WithModifiers(injectModifiers)
       .WithParameterList(ParameterList(SingletonSeparatedList(
         Parameter(Identifier(Args.Services)).WithType(ParseTypeName(Interfaces.IServiceProvider)))))
-      .WithBody(Block(statements));
+      .WithBody(Block(statements))
+      .WithLeadingTrivia(ParseLeadingTrivia("/// <inheritdoc/>\n"));
 
     members.Add(injectMethod);
 
