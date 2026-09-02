@@ -11,8 +11,7 @@ public interface IShellManager { }
 
 public interface ILayer { }
 
-// Case 1: non-generic [Injectable] partial class with a base class.
-[Injectable]
+// Case 1: non-generic partial class with [Inject] members + a base class (no marker).
 public abstract partial class TargetViewModel : ObservableObject
 {
   /// <summary>Shell-level access (options, intents).</summary>
@@ -22,8 +21,7 @@ public abstract partial class TargetViewModel : ObservableObject
   [Inject] public partial ILayer Navigator { get; }
 }
 
-// Case 2: generic [Injectable] partial class with a base class and a type-parameter constraint.
-[Injectable]
+// Case 2: generic partial class with [Inject] members + a base class + type-parameter constraint (no marker).
 public abstract partial class TargetViewModel<TArgs> : ObservableObject where TArgs : PageArgs?
 {
   /// <summary>Shell-level access (options, intents).</summary>

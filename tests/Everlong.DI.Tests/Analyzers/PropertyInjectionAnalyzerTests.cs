@@ -11,9 +11,6 @@ namespace Everlong.DI
 {
     [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Property)]
     public class InjectAttribute : System.Attribute {}
-
-    [System.AttributeUsage(System.AttributeTargets.Class)]
-    public class InjectableAttribute : System.Attribute {}
 }
 ";
 
@@ -25,7 +22,6 @@ using Everlong.DI;
 
 namespace TestNamespace
 {
-    [Injectable]
     public partial class TestClass
     {
         [Inject]
@@ -44,7 +40,6 @@ using Everlong.DI;
 
 namespace TestNamespace
 {
-    [Injectable]
     public partial class TestClass
     {
         [Inject]
@@ -63,7 +58,6 @@ using Everlong.DI;
 
 namespace TestNamespace
 {
-    [Injectable]
     public partial class TestClass
     {
         [Inject]
@@ -75,32 +69,15 @@ namespace TestNamespace
     }
 
     [Fact]
-    public async Task Report_When_Injected_Member_Type_Misses_Injectable()
+    public async Task No_Report_When_Members_Only()
     {
+        // v2: no class-level attribute exists — [Inject] members alone anchor generation.
+        // Nothing to report here (the generator produces the Inject implementation).
         var test = @"
 using Everlong.DI;
 
 namespace TestNamespace
 {
-    public partial class {|DIG0009:TestClass|}
-    {
-        [Inject]
-        private int Value { get; set; }
-    }
-}";
-
-        await VerifyAnalyzer.VerifyAnalyzerAsync(test + AttributeSource);
-    }
-
-    [Fact]
-    public async Task No_Report_When_Injected_Member_Type_Has_Injectable()
-    {
-        var test = @"
-using Everlong.DI;
-
-namespace TestNamespace
-{
-    [Injectable]
     public partial class TestClass
     {
         [Inject]

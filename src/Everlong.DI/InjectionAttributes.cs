@@ -1,26 +1,18 @@
 namespace Everlong.DI;
 
 /// <summary>
-///   Marks a class as a target for dependency injection member injection.
-///   A partial class with this attribute will have an <c>Inject(IServiceProvider)</c>
-///   method generated that resolves all <see cref="InjectAttribute"/>-annotated members.
-/// </summary>
-[AttributeUsage(AttributeTargets.Class)]
-public sealed class InjectableAttribute : Attribute
-{
-  /// <summary>
-  ///   When <see langword="true"/>, the generated <c>Inject()</c> method may be called multiple times
-  ///   and will re-assign all injected members each time.
-  ///   When <see langword="false"/> (default), the first call assigns members and subsequent calls
-  ///   return immediately, making injection idempotent and safe for singletons.
-  /// </summary>
-  public bool Reinjectable { get; set; }
-}
-
-/// <summary>
 ///   Marks a property or field to be injected by the dependency injection container
 ///   when <see cref="IInjectable.Inject"/> is called.
 /// </summary>
+/// <remarks>
+///   <para>
+///     <c>[Inject]</c> members anchor generation (v2): a partial class that declares at
+///     least one of them gets an <c>Inject(IServiceProvider)</c> implementation generated
+///     automatically — no class-level marker required. The class only needs an explicit
+///     opt-in (<see cref="IAutoInject"/>) when it owns no <c>[Inject]</c> members but still
+///     wants to be an injection chain root (e.g. a memberless framework base).
+///   </para>
+/// </remarks>
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
 public sealed class InjectAttribute : Attribute
 {

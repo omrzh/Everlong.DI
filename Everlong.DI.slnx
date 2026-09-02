@@ -11,6 +11,9 @@
     <Project Path="src/Everlong.DI.Generators/Everlong.DI.Generators.csproj" />
     <Project Path="src/Everlong.DI/Everlong.DI.csproj" />
   </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples/Everlong.DI.Dogfood/Everlong.DI.Dogfood.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Everlong.DI.Tests/Everlong.DI.Tests.csproj" />
   </Folder>

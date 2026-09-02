@@ -12,7 +12,9 @@ internal static class Descriptors
   internal const string PropertyInitPartialId = "DIG0006";
   internal const string ClassPartialId = "DIG0007";
   internal const string ReadonlyInjectionId = "DIG0008";
-  internal const string InjectableRequiredId = "DIG0009";
+  // DIG0009 was removed in v2: [Inject] members are self-sufficient (member-anchored
+  // generation); the class-level opt-in is the IAutoInject interface, not an attribute.
+  // IDs are never reused.
   internal const string FieldInjectionToPropertyId = "DIG0010";
   internal const string AlsoAsMissingMainId = "DIG0011";
   internal const string AlsoAsOnTransientId = "DIG0012";
@@ -21,6 +23,8 @@ internal static class Descriptors
   internal const string SelfAndGenericInSameLifetimeId = "DIG0015";
   internal const string MultipleLifetimesId = "DIG0016";
   internal const string AlsoAsTypeNotImplementedId = "DIG0017";
+  internal const string ManualInjectVirtualId = "DIG0018";
+  internal const string ManualInjectExplicitId = "DIG0019";
 
   internal static class Category
   {
@@ -68,14 +72,6 @@ internal static class Descriptors
     "Readonly field injection",
     "Field '{0}' is readonly and cannot be injected. Remove readonly or use constructor injection.",
     Category.Injection,
-    DiagnosticSeverity.Error,
-    isEnabledByDefault: true);
-
-  internal static readonly DiagnosticDescriptor InjectableRequired = new(
-    InjectableRequiredId,
-    "Missing [Injectable] on injection type",
-    "Type '{0}' contains [Inject] members and must be marked with [Injectable]",
-    Category.Usage,
     DiagnosticSeverity.Error,
     isEnabledByDefault: true);
 
@@ -164,6 +160,22 @@ internal static class Descriptors
     "Source Generator Exception",
     "Generator internal error at execution phase: input={0}; message={1}; stack={2}",
     Category.Generator,
+    DiagnosticSeverity.Error,
+    isEnabledByDefault: true);
+
+  internal static readonly DiagnosticDescriptor ManualInjectExplicit = new(
+    ManualInjectExplicitId,
+    "Explicit IInjectable.Inject on an open type",
+    "'{0}' explicitly implements Everlong.DI.IInjectable on a non-sealed type — explicit implementations cannot be overridden, which blocks derived [Inject] classes; convert to an implicit public virtual Inject, or seal the type",
+    Category.Usage,
+    DiagnosticSeverity.Error,
+    isEnabledByDefault: true);
+
+  internal static readonly DiagnosticDescriptor ManualInjectVirtual = new(
+    ManualInjectVirtualId,
+    "IInjectable.Inject should be virtual",
+    "'Inject' implements Everlong.DI.IInjectable on a non-sealed type but is not virtual — mark it 'virtual' (or 'abstract') so derived [Inject] classes can override and chain; otherwise generated overrides fail (CS0506)",
+    Category.Usage,
     DiagnosticSeverity.Error,
     isEnabledByDefault: true);
 }

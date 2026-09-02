@@ -7,13 +7,13 @@ var services = new ServiceCollection();
 // Apply registrar
 services.AddServices(new MyRegistrar());
 
-// Manually register the consumer
+// Manually register the consumers
 services.AddSingleton<Consumer>();
 services.AddSingleton<PropConsumer>();
 
 var sp = services.BuildServiceProvider();
 
-// Resolve & inject
+// Resolve & inject — v2: Inject() is unconditionally idempotent, member-anchored
 var consumer = sp.GetRequiredService<Consumer>();
 consumer.Inject(sp);
 Console.WriteLine(consumer.Run());
@@ -40,16 +40,16 @@ public partial class RegisteredService : IMyService
     public string Greet() => "from registrar";
 }
 
-[Injectable]
-public partial class Consumer : IInjectable
+// v2: [Inject] members anchor generation — no class-level attribute. IAutoInject is the
+// v2 marker interface (derives from IInjectable) on the chain-starting partial.
+public partial class Consumer : IAutoInject
 {
     [Inject] private IMyService _service;
 
     public string Run() => _service.Greet();
 }
 
-[Injectable]
-public partial class PropConsumer : IInjectable
+public partial class PropConsumer : IAutoInject
 {
     [Inject] public partial IMyService Service { get; }
 }

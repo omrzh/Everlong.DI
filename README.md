@@ -2,10 +2,15 @@
 
 **Everlong.DI** is a lightweight attribute-based DI library for .NET, built on source generators — no reflection overhead at runtime. It covers **two independent mechanisms**:
 
-- **Member Injection** (`[Injectable]` / `[Inject]`) — push services *into* an object after it exists.
+- **Member Injection** (`[Inject]` members; `IAutoInject`/`IInjectable` markers) — push services *into* an object after it exists.
 - **Service Registration** (`[Singleton]` / `[Scoped]` / `[Transient]` / `[AlsoAs]` / `[ServiceRegistrar]`) — declare which types go *into* the container.
 
 They solve different problems and never interact: registering a class does not inject its members, and injecting members does not register anything. Pick the parts you need.
+
+> Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
+> ⚠️ Upgrading from ≤ v0.3.0? v0.4.0 (v2) removed `[Injectable]` and `Reinjectable` —
+> `[Inject]` members are the anchor now; the migration table lives in `docs/CHANGELOG.md`.
+> Working example: [`examples/Everlong.DI.Dogfood`](examples/Everlong.DI.Dogfood) (21 runtime checks).
 
 ```
 dotnet add package Everlong.DI
@@ -19,7 +24,7 @@ dotnet add package Everlong.DI
 |---|---|---|
 | Problem | An object already exists and its dependencies are `null` | Types must be declared to the container at startup |
 | Typical scene | Manually created objects, framework-hosted objects, lazy/optional wiring | Application composition root, plugin/batch registration |
-| Core types | `[Injectable]`, `[Inject]`, `IInjectable`, `IInjectorServiceProvider` | `[Singleton<T>]`, `[Scoped<T>]`, `[Transient<T>]`, `[AlsoAs<T>]`, `[ServiceRegistrar]` |
+| Core types | `[Inject]`, `IInjectable`, `IAutoInject`, `IInjectorServiceProvider` | `[Singleton<T>]`, `[Scoped<T>]`, `[Transient<T>]`, `[AlsoAs<T>]`, `[ServiceRegistrar]` |
 | What the generator produces | `Inject(IServiceProvider)` bodies | `RegisterServices(IServiceCollection)` bodies |
 | Runtime hook | Someone must call `Inject()` (manual, wrapper SP, or framework interceptor) | `services.AddServices(new MyRegistrar())` |
 
@@ -32,8 +37,11 @@ dotnet add package Everlong.DI
 ```csharp
 using Everlong.DI;
 
-[Injectable]                                   // triggers the source generator
-public partial class MyService : IInjectable   // IInjectable = the Inject() contract
+// v2: there is no class-level attribute — a partial class with [Inject] members gets an
+// Inject() implementation generated on its own. IAutoInject (the v2 marker, derives from
+// IInjectable) is implemented by every generated chain-starting class; declare it on a
+// memberless framework base to opt the hierarchy in.
+public partial class MyService : IAutoInject
 {
     [Inject] private ILogger _logger;                       // field injection
     [Inject] public ISomeService Service { get; set; }      // property injection
@@ -64,11 +72,11 @@ public virtual void Inject(IServiceProvider services)
 
 - **Nullable members are optional**: `[Inject] ILogger? _logger` → `GetService<T>()` (returns `null`); non-nullable → `GetRequiredService<T>()` (throws). Fail fast by default.
 - **Keyed injection**: `[Inject("cache")]`, `[Inject(42)]`, `[Inject(typeof(TKey))]`, `[Inject(SomeEnum.X)]` → `GetRequiredKeyedService<T>(key)` (requires .NET 8+ container).
-- **`Reinjectable`**: default `false` makes `Inject()` idempotent (safe for singletons); `true` re-assigns on every call (for transients re-injected across scopes).
-- **`partial void OnInjected()`**: runs after every successful injection.
-- **Inheritance**: `Inject()` chains through base classes (`override` + `base.Inject(services)`).
+- **Idempotency is unconditional**: `Inject()` wires an instance exactly once (guard field); later calls are no-ops. There is no opt-out — re-wiring the same instance across scopes would capture scoped services into a long-lived instance (a DI anti-pattern).
+- **`partial void OnInjected()`**: runs after every successful injection. It only exists on generated classes — implement `IAutoInject` on a memberless base if you want a hook with no members.
+- **Inheritance**: `Inject()` chains through the base chain (`override` + `base.Inject(services)`). Intermediate levels that declare no `[Inject]` members are transparent — no marker needed on them. **Sealed**: a sealed chain start gets a plain non-virtual `public void Inject` (nothing could override it — and C# forbids `virtual` in sealed classes); a sealed class in the middle of a chain still emits `override`.
 - **Partial properties**: `[Inject] public partial ILogger Logger { get; }` generates a backing field — requires `<LangVersion>preview</LangVersion>`.
-- **Split partial classes**: a type may be split across several partial files (e.g. shared logic + platform-specific parts). `[Injectable]` goes on exactly one part; `[Inject]` members may live on any part. Generation is driven by the `[Injectable]` hit, never by file path ordering.
+- **Split partial classes**: a type may be split across several partial files. `[Inject]` members may live on any part; generation is driven by members (or an `IAutoInject` marker), never by file path ordering.
 - **Scope detection**: `services.AddScopeMarker();` registers `IScopeMarker` (scoped). `provider.IsScoped()` tells you whether a provider is a child scope — `false` for the root provider, for providers without the marker, and under `ValidateScopes`; the marker itself exposes `IsRootScope`.
 
 ---
@@ -174,11 +182,28 @@ See `docs/skills/everlong-di-workflow/SKILL.md` for the full workflow, diagnosti
 ## Build & Pack
 
 ```bash
-dotnet build
-dotnet pack src/Everlong.DI -c Release
+dotnet build -c Release          # MUST build Release first — the nupkg embeds the
+                                 # Generators/CodeFixers DLLs from bin/Release via loose
+                                 # file includes; `dotnet pack` alone would pack stale ones
+dotnet pack src/Everlong.DI -c Release --no-build
 ```
 
 Package is produced under `src/Everlong.DI/bin/Release/`.
+
+**Verify the packed artifact** (package-level regression net): push the nupkg to any local folder
+feed, then run the SmokeTest — it consumes Everlong.DI as a real NuGet package (not a
+ProjectReference) and must print `All OK!`:
+
+```bash
+dotnet nuget push src/Everlong.DI/bin/Release/Everlong.DI.<version>.nupkg --source <feed-path>
+rm -rf "$HOME/.nuget/packages/everlong.di"   # drop the cached copy first
+# SmokeTest's committed NuGet.Config lists nuget.org only and clears other sources, so the
+# pre-release feed is passed per restore (no config file is modified or committed):
+cd tests/Everlong.DI.SmokeTest
+dotnet run -p:RestoreAdditionalProjectSources="<feed-path>"   # -> All OK!
+```
+
+After a release, SmokeTest verifies the published nuget.org package with no extra config.
 
 ---
 
@@ -197,7 +222,7 @@ Everlong.DI/
 └── tests/
     ├── Everlong.DI.Tests/               # Unit tests + snapshot tests (Verify)
     ├── AssemblyA/                       # Manual end-to-end verification project
-    └── Everlong.DI.SmokeTest/           # Consumes the published package from nuget.org
+    └── Everlong.DI.SmokeTest/           # Package-level consumer smoke (pack → consume)
 ```
 
 ---

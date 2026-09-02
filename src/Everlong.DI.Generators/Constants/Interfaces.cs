@@ -4,7 +4,14 @@ internal static class Interfaces
 {
   internal const string IServiceProvider = "IServiceProvider";
   internal const string IServiceCollection = "IServiceCollection";
-  internal const string IInjectable = "IInjectable";
+
+  internal const string IAutoInject = "IAutoInject";
+
+  // Full metadata names used for symbol-level interface matching. Match the *full* name so
+  // that a foreign type merely called "IInjectable" in another namespace never fools the
+  // chain discovery into generating an override against a non-Everlong member.
+  internal const string IInjectableFull = $"{Ns.DiNamespace}.IInjectable";
+  internal const string IAutoInjectFull = $"{Ns.DiNamespace}.{IAutoInject}";
 }
 
 internal static class Methods

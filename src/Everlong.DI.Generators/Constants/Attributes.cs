@@ -3,7 +3,6 @@ namespace Everlong.DI.Generators.Constants;
 internal static class Attributes
 {
   internal const string InjectFull = $"{Ns.DiNamespace}.InjectAttribute";
-  internal const string InjectableFull = $"{Ns.DiNamespace}.InjectableAttribute";
 
   internal const string SingletonFull = $"{Ns.DiNamespace}.SingletonAttribute";
   internal const string SingletonGenericFull = $"{Ns.DiNamespace}.SingletonAttribute`1";

@@ -20,36 +20,13 @@ public class MemberInjectionGeneratorSnapshotTests
   }
 
   [Fact]
-  public Task Generate_When_Class_Has_Injectable()
+  public Task Generate_When_Class_Declares_Inject_Members()
   {
     var source = @"
 using Everlong.DI;
 
 namespace TestApp;
 
-[Injectable]
-public partial class TestClass
-{
-    [Inject]
-    private IMyService _service = null!;
-}
-
-public interface IMyService {}
-";
-
-    var (_, generatedTrees) = RunGenerator(source);
-    return Verify(generatedTrees, SnapshotSettings);
-  }
-
-  [Fact]
-  public Task Skip_Guard_When_Reinjectable()
-  {
-    var source = @"
-using Everlong.DI;
-
-namespace TestApp;
-
-[Injectable(Reinjectable = true)]
 public partial class TestClass
 {
     [Inject]
@@ -71,7 +48,6 @@ using Everlong.DI;
 
 namespace TestApp;
 
-[Injectable]
 public partial class TestClass
 {
     [Inject]

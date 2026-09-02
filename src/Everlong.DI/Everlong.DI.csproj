@@ -22,7 +22,7 @@
     <RepositoryUrl>https://github.com/omrzh/Everlong.DI.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageReleaseNotes>0.3.0: Add IScopeMarker scope detection — AddScopeMarker()/IsScoped() tell a child scope from the root provider (marker exposes IsRootScope).</PackageReleaseNotes>
+    <PackageReleaseNotes>0.4.0 (v2, breaking): member injection is now member-anchored — [Inject] members generate Inject() on their own; [Injectable] attribute and Reinjectable are removed; IAutoInject is the class-level marker (derives from IInjectable). Memberless chain levels are transparent; injection is unconditionally idempotent with per-level all-or-nothing commit semantics; generated internals use the reserved Δ prefix. New errors DIG0018/DIG0019 flag hand-written IInjectable.Inject that is non-virtual or explicit on a non-sealed class (codefixes included).</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

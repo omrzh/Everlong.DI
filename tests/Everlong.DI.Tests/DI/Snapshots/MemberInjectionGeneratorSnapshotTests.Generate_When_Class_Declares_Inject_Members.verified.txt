@@ -8,16 +8,12 @@ namespace TestApp;
 partial class TestClass : IAutoInject
 {
   private bool Δinjected;
-  [global::System.ComponentModel.EditorBrowsable(global::System.ComponentModel.EditorBrowsableState.Never)]
-  private global::TestApp.IMyService Δinjected_Service = default !;
-  public partial global::TestApp.IMyService Service => Δinjected_Service;
-
   public virtual void Inject(IServiceProvider services)
   {
     if (Δinjected)
       return;
     global::TestApp.IMyService __inject_value_0 = services.GetRequiredService<global::TestApp.IMyService>();
-    Δinjected_Service = __inject_value_0;
+    this._service = __inject_value_0;
     Δinjected = true;
     OnInjected();
   }

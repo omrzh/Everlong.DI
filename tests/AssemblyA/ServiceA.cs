@@ -1,6 +1,5 @@
 using Everlong.DI;
 
-[Injectable]
 public partial class ServiceA : IInjectable
 {
     [Inject] private IHelper _helper;

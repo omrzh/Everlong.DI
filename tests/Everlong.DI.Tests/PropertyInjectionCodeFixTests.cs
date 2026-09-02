@@ -12,9 +12,6 @@ namespace Everlong.DI
 {
     [System.AttributeUsage(System.AttributeTargets.Field | System.AttributeTargets.Property)]
     public class InjectAttribute : System.Attribute {}
-
-    [System.AttributeUsage(System.AttributeTargets.Class)]
-    public class InjectableAttribute : System.Attribute {}
 }
 ";
 
@@ -26,7 +23,6 @@ using Everlong.DI;
 
 namespace TestNamespace
 {
-    [Injectable]
     public partial class TestClass
     {
         [Inject]
@@ -45,7 +41,6 @@ using Everlong.DI;
 
 namespace TestNamespace
 {
-    [Injectable]
     public partial class TestClass
     {
         [Inject]

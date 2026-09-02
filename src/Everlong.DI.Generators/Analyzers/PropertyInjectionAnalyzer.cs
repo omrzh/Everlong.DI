@@ -11,44 +11,15 @@ public sealed class PropertyInjectionAnalyzer : DiagnosticAnalyzer
       Descriptors.TargetPartial,
       Descriptors.PropertyStatic,
       Descriptors.PropertyInitPartial,
-      Descriptors.FieldInjectionToProperty,
-      Descriptors.InjectableRequired);
+      Descriptors.FieldInjectionToProperty);
 
   public override void Initialize(AnalysisContext context)
   {
     context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
     context.EnableConcurrentExecution();
 
-    context.RegisterSymbolAction(AnalyzeType, SymbolKind.NamedType);
     context.RegisterSymbolAction(AnalyzeProperty, SymbolKind.Property);
     context.RegisterSymbolAction(AnalyzeField, SymbolKind.Field);
-  }
-
-  private static void AnalyzeType(SymbolAnalysisContext context)
-  {
-    var typeSymbol = (INamedTypeSymbol)context.Symbol;
-    if (typeSymbol.TypeKind != TypeKind.Class)
-      return;
-
-    var hasInjectable = typeSymbol.GetAttributes()
-      .Any(static a => a.AttributeClass?.ToDisplayString() == Attributes.InjectableFull);
-    if (hasInjectable)
-      return;
-
-    var hasInjectMember = typeSymbol.GetMembers()
-      .OfType<IPropertySymbol>()
-      .Any(static p => p.GetAttributes().Any(static a => a.AttributeClass?.ToDisplayString() == Attributes.InjectFull))
-      || typeSymbol.GetMembers()
-      .OfType<IFieldSymbol>()
-      .Any(static f => f.GetAttributes().Any(static a => a.AttributeClass?.ToDisplayString() == Attributes.InjectFull));
-
-    if (!hasInjectMember)
-      return;
-
-    context.ReportDiagnostic(Diagnostic.Create(
-      Descriptors.InjectableRequired,
-      typeSymbol.Locations.FirstOrDefault(),
-      typeSymbol.Name));
   }
 
   private void AnalyzeField(SymbolAnalysisContext context)

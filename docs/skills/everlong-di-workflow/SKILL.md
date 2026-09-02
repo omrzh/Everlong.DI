@@ -1,6 +1,6 @@
 ---
 name: everlong-di-workflow
-description: Use Everlong.DI correctly — member injection ([Injectable]/[Inject], keyed members, auto-inject via AddInjector) and attribute-based service registration ([Singleton]/[Scoped]/[Transient]/[AlsoAs]/[ServiceRegistrar], keyed and enumerable variants). Avoid null-injected-member surprises, torn-lifetime registration traps, and mis-registered services.
+description: Use Everlong.DI correctly — member injection ([Inject] members / IAutoInject chains, keyed members, auto-inject via AddInjector) and attribute-based service registration ([Singleton]/[Scoped]/[Transient]/[AlsoAs]/[ServiceRegistrar], keyed and enumerable variants). Avoid null-injected-member surprises, torn-lifetime registration traps, and mis-registered services.
 ---
 
 ## 0. Know the Contract Before You `[Inject]`
@@ -13,30 +13,39 @@ Everlong.DI generates an `Inject(IServiceProvider)` method at compile time — i
 | **Wrapper SP** | Built-in `InjectorServiceProvider` registered via `services.AddInjector()` | When you want auto-injection on every resolve without manual `Inject()` calls |
 | **Framework interceptor** | An IoC container extension or base class that hooks into activation | ASP.NET, Avalonia, WPF with custom infrastructure |
 
-**Before writing `[Injectable] partial class Foo : IInjectable`**, decide which caller will invoke `Inject()`. If none, every injected member stays `null` at runtime and the code compiles fine — silent failure.
+**Before writing a class with `[Inject]` members (optionally implementing `IAutoInject`)**, decide which caller will invoke `Inject()`. If none, every injected member stays `null` at runtime and the code compiles fine — silent failure.
 
 ---
 
 ## 1. Core Rules (Member Injection)
 
-### 1.1 `[Injectable]` + `partial` required; `IInjectable` recommended.
+> Every shape below is pinned by unit tests in
+> `tests/Everlong.DI.Tests/DI/MemberInjectionGeneratorTests.cs`.
+
+### 1.1 `[Inject]` members anchor generation; `IAutoInject` is the only class-level marker.
 
 ```csharp
-[Injectable]                              // triggers the source generator
-public partial class MyService : IInjectable  // partial for generated code, IInjectable for the contract
+public partial class MyService : IAutoInject   // IAutoInject = the v2 anchor (derives from IInjectable)
 {
     [Inject] private ILogger _logger;
 }
+
+public partial class DerivedService : MyService // NO marker needed — [Inject] members are the anchor
+{
+    [Inject] private IHttpClientFactory _http;
+}
 ```
 
-Missing any one of the three:
+Rules:
 
-| Missing | Result |
-|---------|--------|
-| `[Injectable]` | Generator skips the class. `IInjectable.Inject()` is not implemented → CS0535 |
-| `partial` | Generator skips the class — non-partial classes are filtered out before generation. If you declared `IInjectable`, its `Inject()` stays unimplemented → CS0535; with `[Inject]` properties the analyzer additionally flags DIG0007 |
-| `IInjectable` | Nothing breaks — the generator appends `: IInjectable` to the generated partial itself. Declaring it explicitly is still recommended: it documents the contract and keeps the class usable even without generated code |
-| All present | Generator produces an `Inject(IServiceProvider)` implementation with an idempotency guard and an `OnInjected()` partial hook. The exact modifier depends on the class shape — see §1.8 |
+| Concern | Rule |
+|---|---|
+| **Anchor** | Any partial class that declares `[Inject]` members is a generation target. Chain-starting generated partials implement `IAutoInject` (hence `IInjectable`). |
+| **`IAutoInject`** | Marker interface (derives from `IInjectable`). Declare it on a class — typically a memberless framework base — to give it a generated `Inject()` and make it a valid chain root even with zero members. Interfaces, unlike a base class, compose with any inheritance, so no attribute form exists. Re-listing it on a derived class (legal C# — only the base *class* cannot repeat, CS0263) opts that level into its own chain-through `override` (own guard + `OnInjected`); without the re-listing a memberless derived level is transparent (§1.8). |
+| **`partial`** | Required on every injection target (the generator emits a partial declaration). Missing `partial` → the analyzer flags it (DIG0007) for property injection, and classes implementing `IAutoInject`/`IInjectable` without a generated implementation fail with CS0535. |
+| **`IInjectable`** | The resolution contract: `Inject(IServiceProvider)`. The injector wrappers check this interface; generated types satisfy it via `IAutoInject`. Declaring it explicitly is optional — it documents the contract. Declaring `: IInjectable` **alone** (no `[Inject]` members, no `IAutoInject`) anchors nothing: the interface stays unimplemented → CS0535. |
+
+`[Inject]` members may live on any partial part. Generation is driven by members / the `IAutoInject` marker, never by file path ordering.
 
 ### 1.2 `LangVersion` must be `preview` for partial properties.
 
@@ -73,8 +82,8 @@ var svc = injector.GetRequiredService<MyService>();  // Inject() called automati
 // → this._logger = services.GetRequiredService<ILogger>();
 
 [Inject] public partial ILogger Logger { get; }
-// → __injected_Logger = services.GetRequiredService<ILogger>();
-// → public partial ILogger Logger => __injected_Logger;
+// → Δinjected_Logger = services.GetRequiredService<ILogger>();
+// → public partial ILogger Logger => Δinjected_Logger;
 ```
 
 Partial properties are preferred for read-only public surface. Fields are simpler and work on any LangVersion.
@@ -88,41 +97,49 @@ Partial properties are preferred for read-only public surface. Fields are simple
 
 Mark a member as nullable when the service is optional. Otherwise, let `GetRequiredService` fail fast on misconfiguration.
 
-### 1.6 `Reinjectable` controls whether `Inject()` can be called multiple times.
+### 1.6 `Inject()` is idempotent — unconditionally.
 
-By default, `Inject()` is idempotent — the first call assigns all members and subsequent calls do nothing. This is safe for singletons:
+The first call assigns all members; subsequent calls return immediately (guard field
+`Δinjected`). There is no opt-out (v2 removed `Reinjectable`): an instance is wired
+exactly once per lifetime. Re-wiring the same instance across scopes would capture
+scoped services into a long-lived instance — a DI anti-pattern — so the correct move
+for a fresh scope is a fresh instance.
+
+Generated internal members (the guard field, partial-property backing fields like
+`Δinjected_Service`) carry the reserved `Δ` prefix (U+0394, Greek capital Delta): user
+partial code cannot collide with them or reference them by accident (typing Δ requires
+copying the generated name), and the ordinary `__` prefix stays free for your own
+conventions. You never need to read them — `OnInjected()` only runs after the level
+committed, so the guard is always `true` there.
+
+The guard has **commit semantics**, and each level is **all-or-nothing**: members are
+first resolved into buffer locals; only when every resolution on the level succeeded are
+the members assigned and `Δinjected` set. If the first `GetRequiredService` succeeds and
+the second throws, **nothing at that level has been assigned** — the instance is exactly
+as it was, and the same instance can be `Inject()`-ed again after the provider is fixed.
 
 ```csharp
-[Injectable]  // Reinjectable defaults to false
-public partial class MySingleton : IInjectable
+public partial class MySingleton : IAutoInject
 {
     [Inject] private ILogger _logger;
 }
 // Generated Inject() body:
-// if (__injected) return;
-// __injected = true;
-// this._logger = services.GetRequiredService<ILogger>();
-// OnInjected();
+// if (Δinjected) return;
+// global::…ILogger __inject_value_0 = services.GetRequiredService<ILogger>();  // may throw → nothing assigned
+// this._logger = __inject_value_0;
+// Δinjected = true;                            // commit only after every resolution succeeded
+// OnInjected();                                 // re-entrant Inject() here is a no-op
 ```
 
-Set `Reinjectable = true` when you need re-assignment on every call (e.g. transient instances resolved into a new scope each time):
-
-```csharp
-[Injectable(Reinjectable = true)]
-public partial class MyTransient : IInjectable
-{
-    [Inject] private ILogger _logger;
-}
-// Generated Inject() — no guard, always re-assigns
-```
+Note: earlier chain levels that already committed stay wired if a later level fails — each
+level commits independently (per-level, not whole-object, atomicity).
 
 ### 1.7 `OnInjected()` — partial hook called after all members are assigned.
 
 Every generated `Inject()` method ends with a call to `partial void OnInjected()`. Implement it in your class to run custom logic after injection:
 
 ```csharp
-[Injectable]
-public partial class MyService : IInjectable
+public partial class MyService : IAutoInject
 {
     [Inject] private ILogger _logger;
 
@@ -133,36 +150,70 @@ public partial class MyService : IInjectable
 }
 ```
 
-`OnInjected()` is only called when injection actually runs — the idempotency guard short-circuits before it. For `Reinjectable = false` classes it therefore runs exactly once, on the first `Inject()` call; for reinjectable classes it runs on every call.
+`OnInjected()` is only called when injection actually runs — the idempotency guard short-circuits before it, so the hook fires exactly once, on the first `Inject()` call. A memberless class gets a usable hook only when it opts in with `IAutoInject`: marking it generates an empty `Inject` whose only job is the hook.
 
-Types may be split across multiple partial files (e.g. shared logic in one file, platform-specific members in another). `[Injectable]` must appear on exactly **one** part (it is not `AllowMultiple` — two parts carrying it is CS0579); `[Inject]` members may live on any part. Generation is driven by the `[Injectable]` hit, never by file path ordering.
+Types may be split across multiple partial files (e.g. shared logic in one file, platform-specific members in another). `[Inject]` members may live on any part. Generation is driven by `[Inject]` members / the `IAutoInject` marker, never by file path ordering.
 
-### 1.8 Inheritance — `Inject()` chains through base classes.
+### 1.8 Inheritance — `Inject()` chains through the base chain.
 
-If the immediate base class is injectable (implements `IInjectable` or declares its own `[Inject]` members), the generated method is emitted as `public override` and calls `base.Inject(services)` first:
+If the base chain (starting at the direct base, walking to `System.Object`) exposes an
+`Inject` — an ancestor that implements `IAutoInject`/`IInjectable`, or declares its own
+`[Inject]` members — the generated method is an `override` that
+calls `base.Inject(services)` first:
 
 ```csharp
-[Injectable]
-public partial class BaseService : IInjectable
+public partial class BaseService : IAutoInject
 {
     [Inject] private ILogger _logger;
 }
 
-[Injectable]
-public partial class DerivedService : BaseService
+public partial class DerivedService : BaseService     // no marker of its own
 {
     [Inject] private IHttpClientFactory _http;
 }
 // Generated DerivedService.Inject():
 // public override void Inject(IServiceProvider services)
 // {
+//     if (Δinjected) return;
+//     Δinjected = true;
 //     base.Inject(services);
 //     this._http = services.GetRequiredService<IHttpClientFactory>();
 //     OnInjected();
 // }
 ```
 
-Each class in the hierarchy gets its own idempotency guard and its own `OnInjected()` call; `Reinjectable` is read from the class's own `[Injectable]` attribute. On a `sealed` class the generated method is a plain `public void Inject(...)` — neither `virtual` nor `override`.
+Key behaviors:
+
+- **Intermediate levels are transparent.** A class between two injectable levels that has
+  no `[Inject]` members and no `IAutoInject` generates nothing; derived classes override
+  the nearest generated ancestor `Inject` *through* it and `base.Inject` reaches the
+  ancestor's wiring. This is what fixes memberless-chain breaks: no per-level marker
+  bookkeeping.
+- **Marked memberless levels still get their own level.** A memberless class declaring
+  `IAutoInject` with an injectable ancestor emits a
+  chain-through `public override Inject` (guard → `base.Inject` → `OnInjected`) so its own
+  `OnInjected()` hook fires.
+- **Chain starts** (no injectable ancestor) emit `public virtual Inject` and the generated
+  partial declares `: IAutoInject`. A memberless chain start emits an empty virtual
+  `Inject` (guard + `OnInjected`), giving the marker meaning even with no members.
+- **Sealed** classes:
+  - sealed + chain start → plain `public void Inject(...)` — **not virtual**, because a
+    sealed class cannot be derived, so a virtual method could never be overridden; C# also
+    forbids `virtual` in sealed classes (CS0549).
+  - sealed + existing chain → still `public override` (overriding is legal in sealed
+    classes; only *declaring* `virtual` is not). Virtual-ness dies with the sealed class.
+- **Compiled ancestors** carry the generated interface and a virtual `Inject` in metadata, so chains are also discovered across assembly boundaries (no same-compilation visibility problem there).
+- **Hand-written `IInjectable` bases** interop on two conditions: the manual `Inject` must be
+  declared `virtual` (or `abstract`) — a plain `public void Inject` is non-virtual, and the
+  generated derived `override` then fails with CS0506 — and the class must stay on
+  `IInjectable`, **not** `IAutoInject` (declaring the anchor while hand-implementing `Inject`
+  makes the generator emit a duplicate root → CS0111). Manual levels get none of the
+  machinery (no `Δ` guard, no two-phase buffering, no `OnInjected`) — that is the trade for
+  not using the generator. If a manual override is itself chained, remember to call
+  `base.Inject(services)` or the generated ancestor's wiring is skipped. The analyzer
+  flags the non-virtual case (DIG0018) with a one-click "Make Inject virtual" codefix.
+- Each class in the hierarchy gets its own idempotency guard and its own `OnInjected()`
+  call (§1.6/§1.7).
 
 ### 1.9 Scope detection — `AddScopeMarker` / `IsScoped`.
 
@@ -329,10 +380,10 @@ Every injected member is resolved via a direct generic call emitted as source co
 
 | Forbidden | Why |
 |-----------|-----|
-| `[Inject]` on a `readonly` field | Compile-time error DIG0008 (the generator also skips the class, leaving the interface contract unimplemented → CS0535). Use partial property injection instead.
-| Using `Reinjectable = false` (default) for a transient that gets re-injected into different scopes | The idempotency guard means members from the first injection are never updated. Either set `Reinjectable = true` or re-create the instance. |
-| `[Injectable]` on a non-partial class | Generator cannot inject code → compilation error. The analyzer catches this at IDE time (DIG0007 / DIG0009). |
-| `[Inject]` members on a class without `[Injectable]` | Compile-time error DIG0009. The analyzer requires `[Injectable]` on any type that declares `[Inject]` members. |
+| `[Inject]` on a `readonly` field | Compile-time error DIG0008; the generator skips the whole class (no `Inject` at all — other valid members are not injected either). If the class declares `IAutoInject`/`IInjectable`, the missing implementation additionally fails with CS0535. Use partial property injection instead.
+| Re-injecting the same instance into a different scope | Impossible by design: `Inject()` is unconditionally idempotent (§1.6). Create a fresh instance for the new scope instead of re-wiring a long-lived one — re-wiring would capture scoped services (DI anti-pattern). |
+| An injection target is not `partial` (declares `[Inject]` members, or implements `IAutoInject`) | The generator cannot emit its partial declaration → nothing is generated. Property injection is flagged at IDE time (DIG0007); a source-declared `IAutoInject`/`IInjectable` without generated code fails with CS0535. Keep every target partial. |
+| `IAutoInject` on a class that is never derived and has no `[Inject]` members | Generates an empty virtual root `Inject` (guard + `OnInjected()`). Harmless, but if you only wanted a silent marker, drop it — a memberless class without `IAutoInject` is transparent. |
 | Calling `Inject()` before the service provider is ready | If the injected members depend on services that haven't been registered yet, `GetRequiredService<T>()` throws at injection time, not at usage time. That is correct behavior — fail fast. |
 | Holding a scoped service in a field injected once into a singleton | The `[Inject]` is called once. If the target is a singleton, its injected scoped services are captured for the entire application lifetime. This is a DI anti-pattern — same as constructor-injecting a scoped service into a singleton. |
 | Forgetting to register `IInjectorServiceProvider` when auto-inject is expected | `services.AddInjector()` must be called; otherwise `IInjectorServiceProvider` is not in the container and no auto-injection happens. |
@@ -356,8 +407,12 @@ Every injected member is resolved via a direct generic call emitted as source co
 | DIG0006 | Error | `init`-only `[Inject]` property is not `partial` |
 | DIG0007 | Error | Class with `[Inject]` members is not `partial` |
 | DIG0008 | Error | `[Inject]` on a `readonly` field |
-| DIG0009 | Error | `[Inject]` members without `[Injectable]` |
 | DIG0010 | Info | Prefer partial property over field injection |
+
+> DIG0009 (`[Inject]` members without a class-level opt-in) was **removed in v2**: the
+> class-level `[Injectable]` attribute no longer exists (`IAutoInject` is the marker
+> interface), and `[Inject]` members alone are a generation target. Diagnostic IDs are
+> never reused.
 | DIG0011 | Error | `[AlsoAs]` without a main registration |
 | DIG0012 | Error | `[AlsoAs]` on a transient main registration |
 | DIG0013 | Error | `[AlsoAs]` with multiple main registrations |
@@ -365,6 +420,8 @@ Every injected member is resolved via a direct generic call emitted as source co
 | DIG0015 | Error | Self and generic registrations mixed in one lifetime |
 | DIG0016 | Error | Multiple lifetimes on one type |
 | DIG0017 | Error | AlsoAs type is not an interface implemented by the class |
+| DIG0018 | Error | Hand-written `IInjectable.Inject` is not `virtual` on a non-sealed class — an open class must not block its derived classes' injection channel (codefix: make it virtual). Sealed classes are exempt |
+| DIG0019 | Error | `IInjectable.Inject` explicitly implemented on a non-sealed class — explicit implementations can never be overridden, blocking derived `[Inject]` classes (codefix: convert to implicit `public virtual`). Sealed classes are exempt |
 
 ---
 
